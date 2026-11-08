@@ -35,6 +35,8 @@ function agent(
     role,
     isLead,
     cli: "claude",
+    auth: "subscription",
+    provider: "anthropic",
     model: isLead ? "Opus" : "Sonnet",
     mode: "sandbox",
     color,

@@ -60,7 +60,7 @@ export class Inbox {
     if (event === "SessionStart") this.sessionUp.add(agentId);
     if (event === "SessionEnd") this.sessionUp.delete(agentId);
     if (event === "UserPromptSubmit") this.lastSubmit.set(agentId, Date.now());
-    if (event === "Stop" || event === "SessionStart" || event === "Notification") setTimeout(() => void this.tryType(agentId), QUIET_MS + 100);
+    if (event === "Stop" || event === "Idle" || event === "SessionStart" || event === "Notification") setTimeout(() => void this.tryType(agentId), QUIET_MS + 100);
   }
 
   /** An already-running session was reattached: its prompt exists even though HQ missed SessionStart. */

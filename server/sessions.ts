@@ -8,7 +8,8 @@ import { homedir } from "node:os";
 import { stackSkills } from "../src/data/stack";
 import { hasHqSkills, prepareSkills } from "./skills";
 import { resolve, sep } from "node:path";
-import { HOST_TERMINAL, type AgentCli, type SetupCheckId, type WorkspaceInfo } from "../src/data/types";
+import { CLI_LABEL, HOST_TERMINAL, type AgentCli, type SetupCheckId, type WorkspaceInfo } from "../src/data/types";
+import { PROVIDER_INFO } from "../src/data/providers";
 import { adapters, localBinary } from "./adapters";
 import type { Hub } from "./hub";
 import { sessionBackend, type LaunchSpec, type TermHandle } from "./backends";
@@ -63,6 +64,8 @@ export class Sessions {
   onSandboxRemoved: (agentId: string) => void = () => {};
   /** The agent's env file, if it has one (passed with --env-file / sourced). */
   envFileFor: (agentId: string) => string | null = () => null;
+  /** API-key agents: an env file with just their provider's key (throws when it's missing). */
+  providerEnvFor: (agentId: string) => string | null = () => null;
   /** Called when HQ reattaches to a session that was already running (e.g. after an HQ restart). */
   onSessionReattached: (agentId: string) => void = () => {};
   /** When the agent's last hook arrived (from the inbox). */
@@ -95,6 +98,7 @@ export class Sessions {
     const check = (cid: string) => setup.checks.find((c) => c.id === cid)?.status;
     if (agent.mode === "local" && agent.cli === "claude" && check("claude") !== "ok") return fail("Claude Code isn't installed. See the setup checklist.");
     if (agent.mode === "local" && agent.cli === "codex" && check("codex") !== "ok") return fail("Codex isn't installed on this machine. See the setup checklist, or run this agent in a sandbox.");
+    if (agent.mode !== "sandbox") return fail(`${agent.name} must run in a Docker Sandbox. Every agent gets its own sandbox.`);
     if (agent.mode === "sandbox" && agent.cli === "codex" && check("openai-secret") !== "ok")
       return fail("Codex needs an OpenAI key in sbx. Run `sbx secret set openai --oauth` (Setup checklist → Run in terminal).");
 
@@ -114,31 +118,40 @@ export class Sessions {
         if (skills.error) hub.activity("session", id, `${agent.name}: some agent skills didn't install (${skills.error.slice(0, 120)}). Starting anyway.`);
       }
       if (!(await this.backend.exists(name))) {
-        const launch = adapter.launch(agent);
+        const launch = adapter.launch(agent, hub.snap.config, dir);
         const envFile = this.envFileFor(id);
-        // Local mode: the agent gets the env file's variables (tmux only: there's no shell to load them into otherwise).
-        let spec: LaunchSpec = { file: localBinary[agent.cli], args: launch.args, envFile };
-        if (agent.mode === "local" && envFile && !this.backend.persistent)
-          hub.activity("session", id, `${agent.name}'s env file isn't loaded in Local mode on Windows. Use Sandbox mode for app variables.`);
+        const providerEnv = this.providerEnvFor(id);
+        // App variables, then the provider key (API-key agents). Local mode: sourced by tmux; Sandbox: --env-file.
+        const envFiles = [envFile, providerEnv].filter((f): f is string => !!f);
+        const vars = [...(launch.unset ?? []).flatMap((k) => ["-u", k]), ...Object.entries(launch.env ?? {}).map(([k, v]) => `${k}=${v}`)];
+        let spec: LaunchSpec = vars.length ? { file: "env", args: [...vars, localBinary[agent.cli], ...launch.args], envFiles } : { file: localBinary[agent.cli], args: launch.args, envFiles };
         if (agent.mode === "sandbox") {
           hub.setSession(id, { detail: "Allowing the sandbox to reach HQ…" });
           await this.ensurePolicy();
+          // The provider's API (or Ollama on this machine) when the base policy blocks it: a rule for this sandbox only.
+          const hosts = agent.auth === "apiKey" ? (PROVIDER_INFO[agent.provider].sandboxHosts ?? []) : [];
+          const missing = hosts.filter((h) => !agent.sandbox.allow.includes(h));
+          if (missing.length) {
+            agent.sandbox.allow = [...agent.sandbox.allow, ...missing];
+            hub.configChanged();
+          }
           hub.setSession(id, { detail: "Starting sandbox…" });
           // sbx only accepts a size when it creates the sandbox; an existing (stopped) one keeps its size,
           // and passing --cpus/--memory again makes `sbx run` fail. "Recreate sandbox" applies a new size.
           const { cpus, memoryGb } = agent.sandbox.resources;
           const isNew = !(await this.sandboxExists(name));
           const size = !isNew ? [] : [...(cpus ? ["--cpus", String(cpus)] : []), ...(memoryGb ? ["--memory", `${Math.round(memoryGb * 1024)}m`] : [])];
-          const env = [...(envFile ? ["--env-file", envFile] : []), "-e", `BROWSER=${SANDBOX_BROWSER}`];
+          // The provider key enters the VM as a variable: the sandbox, not the key, is the boundary.
+          const env = [...envFiles.flatMap((f) => ["--env-file", f]), "-e", `BROWSER=${SANDBOX_BROWSER}`];
           const args = launch.args.length ? ["--", ...launch.args] : [];
-          spec = { file: "sbx", args: ["run", "--name", name, ...size, ...env, launch.sbxAgent, dir, ...args], envFile: null };
+          spec = { file: "sbx", args: ["run", "--name", name, ...size, ...env, launch.sbxAgent, dir, ...args], envFiles: [] };
         }
         await this.backend.create(name, dir, spec, { cols: 200, rows: 50 });
       }
       this.attach(id);
       hub.setSession(id, { state: "running", detail: null, workspace: dir });
       hub.setStatus(id, { state: "idle", note: agent.mode === "sandbox" ? "Sandbox running" : "Running locally" });
-      hub.activity("session", id, `${agent.name} started (${agent.cli === "codex" ? "Codex" : "Claude Code"}, ${agent.mode === "sandbox" ? "Docker Sandbox" : "Local mode"})`);
+      hub.activity("session", id, `${agent.name} started (${CLI_LABEL[agent.cli]}, ${agent.mode === "sandbox" ? "Docker Sandbox" : "Local mode"})`);
       if (agent.mode === "sandbox") {
         setTimeout(() => void this.refreshSandboxSizes(), 4000);
         void this.whenSandboxExists(id).then((ok) => ok && this.onSandboxReady(id));
@@ -406,7 +419,8 @@ export class Sessions {
             this.onSessionReattached(agent.id);
           }
           if (agent.cli === "codex") await this.watchCodexScreen(agent.id, name);
-          await this.reconcileFromScreen(agent.id, agent.cli, name);
+          // OpenCode's plugin reports every state change itself, and its screen isn't Claude's.
+          if (agent.cli !== "opencode") await this.reconcileFromScreen(agent.id, agent.cli, name);
         } else if (st.session.state === "running") {
           this.detach(agent.id);
           this.closeShell(agent.id);

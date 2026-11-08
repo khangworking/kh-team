@@ -79,6 +79,7 @@ export function createWsSource(token: string): OfficeDataSource {
     inspectWorkspace: (id) => send("inspectWorkspace", id),
     updateSandbox: (id, patch) => send("updateSandbox", id, patch),
     setSecret: (id, name, value) => send("setSecret", id, name, value),
+    openProviderKeys: () => send("openProviderKeys"),
     removeSecret: (id, name) => send("removeSecret", id, name),
     setProxy: (url) => send("setProxy", url),
     openEnvFile: (id) => send("openEnvFile", id),

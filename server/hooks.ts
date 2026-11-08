@@ -9,6 +9,8 @@ interface HookPayload {
   tool_name?: string;
   message?: string;
   notification_type?: string;
+  /** StopFailure: what ended the turn (a rate limit, no credit, a bad key or model). */
+  error?: unknown;
 }
 
 const clip = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
@@ -83,6 +85,21 @@ export function handleHook(hub: Hub, inbox: Inbox, agentId: string, event: strin
       turnOpen.set(agentId, false);
       hub.setStatus(agentId, { state: "idle", note: "Finished — ready for the next instruction" });
       hub.activity("agent.answered", agentId, `${name} finished a turn`);
+      break;
+    }
+    case "Idle":
+      // A finished run from a CLI that can't continue on a Stop reply (OpenCode): queued messages stay
+      // in the inbox, which types them now that the agent is idle.
+      turnOpen.set(agentId, false);
+      hub.setStatus(agentId, { state: "idle", note: "Finished — ready for the next instruction" });
+      hub.activity("agent.answered", agentId, `${name} finished a turn`);
+      break;
+    case "StopFailure": {
+      // The turn ended on an API error. Not "finished": say why, and keep queued messages for later.
+      turnOpen.set(agentId, false);
+      const why = typeof body.error === "string" ? body.error : body.error ? JSON.stringify(body.error) : "API error";
+      hub.setStatus(agentId, { state: "needs-input", note: `Provider error: ${clip(why, 100)}` });
+      hub.activity("agent.needs-input", agentId, `${name} stopped on a provider error: ${clip(why, 60)}`);
       break;
     }
     case "SessionEnd":

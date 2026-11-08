@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { nextAgentName } from "../../data/names";
-import { CLI_LABEL, type AgentCli, type AgentConfig, type AgentMode } from "../../data/types";
+import { normalizeAuth, PROVIDER_INFO, PROVIDERS, providersFor, SUBSCRIPTION_PROVIDER, type ProviderId } from "../../data/providers";
+import { CLI_LABEL, type AgentAuth, type AgentCli, type AgentConfig, type AgentMode } from "../../data/types";
 import { officeActions, useOffice } from "../../store/office";
 import { agentPalette } from "../../theme/tokens";
 import { Field, Portrait, SectionTitle } from "../kit";
@@ -18,6 +19,60 @@ export function CliSelect({ value, onChange }: { value: AgentCli; onChange: (v: 
     </select>
   );
 }
+const SUBSCRIPTION_LABEL: Partial<Record<AgentCli, string>> = { claude: "Claude subscription", codex: "ChatGPT subscription" };
+
+/** How the agent pays for its model: the CLI's subscription, or an API key for one of the providers the CLI can reach. */
+export function AccessSelect({ cli, auth, provider, onChange }: { cli: AgentCli; auth: AgentAuth; provider: ProviderId; onChange: (v: { auth: AgentAuth; provider: ProviderId }) => void }) {
+  const value = auth === "subscription" ? "subscription" : `apiKey:${provider}`;
+  return (
+    <select
+      className="field"
+      value={value}
+      aria-label="Model access"
+      onChange={(e) => {
+        const v = e.target.value;
+        onChange(v === "subscription" ? normalizeAuth(cli, "subscription", null) : normalizeAuth(cli, "apiKey", v.slice("apiKey:".length) as ProviderId));
+      }}
+    >
+      {SUBSCRIPTION_PROVIDER[cli] && <option value="subscription">{SUBSCRIPTION_LABEL[cli]}</option>}
+      {providersFor(cli).map((p) => (
+        <option key={p} value={`apiKey:${p}`}>
+          {PROVIDER_INFO[p].keyVar ? "API key · " : ""}
+          {PROVIDER_INFO[p].label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** The office's provider keys file: HQ shows which keys are there, never their values. */
+function ProviderKeysSection({ team }: { team: AgentConfig[] }) {
+  const present = useOffice((s) => s.snap?.providerKeys) ?? [];
+  const needed = [...new Set(team.filter((a) => a.auth === "apiKey").map((a) => a.provider))];
+  return (
+    <section className="border-[3px] border-ink bg-white p-3">
+      <SectionTitle>Provider keys</SectionTitle>
+      <p className="mb-2 text-[14px] text-muted">
+        API-key agents get their key from this office's keys file when their sandbox starts: each agent only its own provider's key, as a variable inside its sandbox. Subscription agents sign in inside their own terminal instead.
+      </p>
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {PROVIDERS.filter((p) => PROVIDER_INFO[p].keyVar).map((p) => {
+          const has = present.includes(p);
+          const missing = !has && needed.includes(p);
+          return (
+            <span key={p} className={`border-2 border-ink px-1.5 py-0.5 text-[12px] ${has ? "bg-green/30" : missing ? "bg-red/20" : "bg-cream-2"}`} title={PROVIDER_INFO[p].keyVar ?? ""}>
+              {PROVIDER_INFO[p].label}: {has ? "set" : missing ? "missing" : "—"}
+            </span>
+          );
+        })}
+      </div>
+      <button className="btn text-[13px]" onClick={() => officeActions.openProviderKeys()}>
+        Open keys file
+      </button>
+    </section>
+  );
+}
+
 export const ROLE_SUGGESTIONS = ["Developer", "QA", "Designer", "Docs", "DevOps", "Security"];
 
 export function TeamSettings() {
@@ -27,6 +82,7 @@ export function TeamSettings() {
   if (!team) return null;
   return (
     <div className="flex flex-col gap-5">
+      <ProviderKeysSection team={team} />
       <section>
         <SectionTitle>Team · {team.length} agents</SectionTitle>
         <p className="mb-3 text-[14px] text-muted">
@@ -48,7 +104,7 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
   const set = (patch: Parameters<typeof officeActions.updateAgent>[1]) => officeActions.updateAgent(agent.id, patch);
   return (
     <div className="border-[3px] border-ink bg-white">
-      <div className="grid grid-cols-[40px_1fr_1fr_150px_130px_auto] items-end gap-2.5 p-2.5">
+      <div className="grid grid-cols-[40px_1fr_1fr_120px_170px_100px_auto] items-end gap-2.5 p-2.5">
         <Portrait color={agent.color} lead={agent.isLead} />
         <Field label="Name">
           <CommitInput className="field" value={agent.name} onCommit={(v) => v.trim() && set({ name: v.trim() })} />
@@ -63,11 +119,11 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
         <Field label="Agent">
           <CliSelect value={agent.cli} onChange={(cli) => set({ cli })} />
         </Field>
+        <Field label="Model access">
+          <AccessSelect cli={agent.cli} auth={agent.auth} provider={agent.provider} onChange={(v) => set(v)} />
+        </Field>
         <Field label="Runs in">
-          <select className="field" value={agent.mode} onChange={(e) => set({ mode: e.target.value as AgentMode })}>
-            <option value="sandbox">Sandbox</option>
-            <option value="local">Local</option>
-          </select>
+          <div className="field flex h-9 items-center bg-cream-2">Sandbox</div>
         </Field>
         <div className="flex gap-1.5">
           <button className="btn px-2 text-[13px]" aria-expanded={expanded} onClick={onToggle}>
@@ -83,11 +139,6 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
           )}
         </div>
       </div>
-      {agent.mode === "local" && (
-        <div className="border-t-2 border-dashed border-cream-3 px-3 py-1 text-[12px] text-muted">
-          Local mode runs plain <code>{agent.cli}</code> in the agent's own folder. Permission prompts stay on.
-        </div>
-      )}
       {expanded && (
         <div className="grid grid-cols-2 gap-3 border-t-[3px] border-ink bg-cream p-3">
           <Field label="Colour">
@@ -107,8 +158,8 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
             <CommitInput
               className="field"
               value={agent.model}
-              placeholder={`${CLI_LABEL[agent.cli]} default`}
-              list={agent.cli === "codex" ? "codex-models" : "claude-models"}
+              placeholder={agent.auth === "apiKey" && PROVIDER_INFO[agent.provider].models[0] ? PROVIDER_INFO[agent.provider].models[0] : `${CLI_LABEL[agent.cli]} default`}
+              list={agent.auth === "apiKey" ? `models-${agent.provider}` : agent.cli === "codex" ? "codex-models" : "claude-models"}
               onCommit={(v) => set({ model: v.trim() })}
             />
           </Field>
@@ -144,18 +195,19 @@ function AddAgent() {
   const [name, setName] = useState("");
   const [role, setRole] = useState("Developer");
   const [cli, setCli] = useState<AgentCli>("claude");
-  const [mode, setMode] = useState<AgentMode>("sandbox");
+  const [access, setAccess] = useState(normalizeAuth("claude", "subscription", null));
+  const mode: AgentMode = "sandbox";
   const team = useOffice((s) => s.snap?.config.team) ?? [];
   const suggested = nextAgentName(team.map((a) => a.name));
   const add = () => {
-    officeActions.addAgent({ name: name.trim() || suggested, role, cli, mode });
+    officeActions.addAgent({ name: name.trim() || suggested, role, cli, ...access, mode });
     setName("");
   };
   return (
     <section className="border-[3px] border-dashed border-ink p-3">
       <SectionTitle>Add an agent</SectionTitle>
       <form
-        className="grid grid-cols-[1fr_1fr_150px_130px_auto] items-end gap-2.5"
+        className="grid grid-cols-[1fr_1fr_120px_170px_100px_auto] items-end gap-2.5"
         onSubmit={(e) => {
           e.preventDefault();
           add();
@@ -168,20 +220,26 @@ function AddAgent() {
           <input className="field" value={role} list="role-suggestions" onChange={(e) => setRole(e.target.value)} />
         </Field>
         <Field label="Agent">
-          <CliSelect value={cli} onChange={setCli} />
+          <CliSelect
+            value={cli}
+            onChange={(c) => {
+              setCli(c);
+              setAccess(normalizeAuth(c, access.auth, access.provider));
+            }}
+          />
+        </Field>
+        <Field label="Model access">
+          <AccessSelect cli={cli} auth={access.auth} provider={access.provider} onChange={setAccess} />
         </Field>
         <Field label="Runs in">
-          <select className="field" value={mode} onChange={(e) => setMode(e.target.value as AgentMode)}>
-            <option value="sandbox">Sandbox</option>
-            <option value="local">Local</option>
-          </select>
+          <div className="field flex h-9 items-center bg-cream-2">Sandbox</div>
         </Field>
         <button className="btn" type="submit">
           Add
         </button>
       </form>
       <p className="mt-2 text-[12px] text-muted">
-        HQ starts a new sandbox with the lead's network policy and allows it to reach HQ at host.docker.internal.
+        Every agent gets its own Docker Sandbox, with the lead's network rules and access to HQ at host.docker.internal.
       </p>
       <datalist id="codex-models">
         <option value="gpt-5.6-sol" />
@@ -191,6 +249,13 @@ function AddAgent() {
         <option value="sonnet" />
         <option value="haiku" />
       </datalist>
+      {PROVIDERS.map((p) => (
+        <datalist key={p} id={`models-${p}`}>
+          {PROVIDER_INFO[p].models.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
+      ))}
       <datalist id="role-suggestions">
         {ROLE_SUGGESTIONS.map((r) => (
           <option key={r} value={r} />
