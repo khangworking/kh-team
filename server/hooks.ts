@@ -22,6 +22,49 @@ const clip = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + "…" : 
  */
 const turnOpen = new Map<string, boolean>();
 
+/**
+ * OpenCode can't continue itself after a run ends (Claude Code's Stop reply can). A small model often
+ * ends a run with a summary and no work, which leaves its task "in progress" with an idle agent.
+ * So when an OpenCode agent finishes a run while it still holds an in-progress task, HQ types a short
+ * reminder into its terminal. Turns that used tools count as progress; turns that didn't are limited.
+ */
+const NUDGE_QUIET_TURNS = 3; // consecutive runs with no tool call before HQ gives up
+const NUDGE_TOTAL = 12; // reminders per task, however much progress there is
+const toolsThisTurn = new Map<string, number>();
+const nudges = new Map<string, { taskId: string; quiet: number; total: number }>();
+
+export function nudgeAfterIdle(hub: Pick<Hub, "snap" | "activity" | "setStatus" | "name">, inbox: Pick<Inbox, "pending" | "push">, agentId: string): "none" | "sent" | "gave-up" {
+  const task = hub.snap.tasks.find((t) => t.ownerId === agentId && t.status === "in-progress");
+  if (!task) {
+    nudges.delete(agentId);
+    return "none";
+  }
+  // Queued messages start the next run on their own.
+  if (inbox.pending(agentId) > 0) return "none";
+  const prev = nudges.get(agentId);
+  const s = prev?.taskId === task.id ? prev : { taskId: task.id, quiet: 0, total: 0 };
+  s.quiet = (toolsThisTurn.get(agentId) ?? 0) > 0 ? 0 : s.quiet + 1;
+  s.total++;
+  nudges.set(agentId, s);
+  if (s.quiet > NUDGE_QUIET_TURNS || s.total > NUDGE_TOTAL) {
+    // The next run (the user's message) starts a fresh count.
+    nudges.delete(agentId);
+    const note = `Stopped without finishing ${task.id} — send it a message or reassign the task`;
+    hub.setStatus(agentId, { state: "idle", note });
+    hub.activity("agent.needs-input", agentId, `${hub.name(agentId)} keeps stopping before ${task.id} is done. HQ stopped reminding it.`);
+    return "gave-up";
+  }
+  inbox.push(agentId, {
+    fromId: "hq",
+    kind: "notice",
+    text:
+      `Your task ${task.id} ("${task.title}") is still in progress, but your last run ended. Do not describe the work: do it with your tools (create the branch, edit the files, run the commands). ` +
+      "When the PR is open, call set_my_status in-review with the PR number. If you are blocked, call set_my_status blocked with the reason.",
+  });
+  hub.activity("agent.answered", agentId, `HQ reminded ${hub.name(agentId)} to continue ${task.id}`);
+  return "sent";
+}
+
 export interface HookResult {
   ok: boolean;
   /** JSON printed by the hook command; Claude Code acts on it (Stop: block = continue). */
@@ -41,12 +84,14 @@ export function handleHook(hub: Hub, inbox: Inbox, agentId: string, event: strin
       break;
     case "UserPromptSubmit":
       turnOpen.set(agentId, true);
+      toolsThisTurn.set(agentId, 0);
       hub.setStatus(agentId, { state: "working", note: body.prompt ? clip(body.prompt.replace(/\s+/g, " ")) : null });
       if (st.state !== "working") hub.activity("task.started", agentId, `${name} is working`);
       break;
     case "PreToolUse":
       // Stale: the turn already ended. (Unknown, e.g. after an HQ restart, is allowed.)
       if (turnOpen.get(agentId) === false) break;
+      toolsThisTurn.set(agentId, (toolsThisTurn.get(agentId) ?? 0) + 1);
       // Also clears "needs input" once a permission prompt is answered.
       if (st.state !== "working" || st.note?.startsWith("Asking")) hub.setStatus(agentId, { state: "working", note: body.tool_name ? `Using ${body.tool_name}` : null });
       break;
@@ -93,6 +138,7 @@ export function handleHook(hub: Hub, inbox: Inbox, agentId: string, event: strin
       turnOpen.set(agentId, false);
       hub.setStatus(agentId, { state: "idle", note: "Finished — ready for the next instruction" });
       hub.activity("agent.answered", agentId, `${name} finished a turn`);
+      nudgeAfterIdle(hub, inbox, agentId);
       break;
     case "StopFailure": {
       // The turn ended on an API error. Not "finished": say why, and keep queued messages for later.

@@ -24,6 +24,7 @@ History: OpenCode 1.x on the host came first, then Pi, then OpenCode again becau
 - HQ adds the provider's `sandboxHosts` to the agent's allowed sites before its sandbox starts (rules for that sandbox only).
 - OpenCode runs with `--auto` (approves its own tool calls) because the sandbox is the boundary.
 - OpenCode can't continue a finished run from a plugin, so the plugin posts `Idle` (Stop without taking the queue) and the inbox types queued messages. `StopFailure` (OpenCode, and later Claude Code's hook) marks "needs you" with the error.
+- OpenCode agents that end a run while holding an in-progress task get a reminder typed by HQ (`nudgeAfterIdle` in `server/hooks.ts`). Runs that used a tool count as progress; after 3 runs in a row with no tool call, or 12 reminders for one task, HQ stops and notes it on the agent. Found when `gemma4:e2b` ended a task with a summary and did no work.
 - HQ doesn't read OpenCode's screen (`reconcileFromScreen` is for Claude Code and Codex).
 - HQ starts Claude agents with `CLAUDECODE` unset (an HQ started from a Claude Code terminal passes it on, and Claude Code then refuses to start).
 
