@@ -45,7 +45,7 @@ async function test(backend: SessionBackend) {
   let streamed = "";
   let ended = false;
   try {
-    await backend.create(name, cwd, { file: process.execPath, args: ["-e", FAKE_AGENT], envFile: null }, { cols: 100, rows: 30 });
+    await backend.create(name, cwd, { file: process.execPath, args: ["-e", FAKE_AGENT], envFiles: [] }, { cols: 100, rows: 30 });
     if (!(await backend.exists(name))) throw new Error("session missing after create");
     const view = backend.attach(name, { cols: 90, rows: 25 }, (d) => (streamed += d), () => (ended = true));
     await until("agent-ready on screen", async () => (await backend.screenText(name, 10)).includes("agent-ready"));

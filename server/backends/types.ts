@@ -5,8 +5,8 @@
 export interface LaunchSpec {
   file: string;
   args: string[];
-  /** Local mode only: an env file whose variables the agent gets. HQ never reads it. */
-  envFile: string | null;
+  /** Local mode only: env files whose variables the agent gets, in order (app variables, then the provider key). */
+  envFiles: string[];
 }
 
 export interface TermSize {

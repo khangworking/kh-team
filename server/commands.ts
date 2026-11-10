@@ -1,5 +1,6 @@
 // Browser commands → server actions. Names match OfficeDataSource methods.
 
+import { isProvider, normalizeAuth } from "../src/data/providers";
 import { SERVICE_KEYS, type AgentCli, type AgentConfig, type AgentPatch, type ReviewTool, type WelcomeInput, type NewMcpServer, type Board, type NewAgentInput, type ProjectConfig, type RemoveAgentOptions, type SandboxSettings, type SetupCheckId, type WorkflowPatch } from "../src/data/types";
 import { LEAD_NAME, OFFICE_NAME_MAX } from "../src/data/names";
 import { STACK_CATEGORIES, stackSkills, stackTool, type StackChoice, type StackConfig } from "../src/data/stack";
@@ -10,6 +11,7 @@ import { agentPalette } from "../src/theme/tokens";
 import { Hub } from "./hub";
 import type { Inbox } from "./inbox";
 import type { Planner } from "./planner";
+import type { ProviderKeys } from "./providerKeys";
 import type { Sbx } from "./sbx";
 import type { SbxMcp } from "./sbxMcp";
 import type { Sessions } from "./sessions";
@@ -45,7 +47,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 const str = (v: unknown, max = 2000) => (typeof v === "string" ? v.slice(0, max) : "");
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inbox: Inbox, sbx: Sbx, mcp: SbxMcp) {
+export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inbox: Inbox, sbx: Sbx, mcp: SbxMcp, keys: ProviderKeys) {
   /** Runs an sbx change and reports failures in the activity feed. */
   const attempt = async (agentId: string | null, what: string, fn: () => Promise<void>) => {
     try {
@@ -56,6 +58,8 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
     }
   };
   const team = () => hub.snap.config.team;
+  const toCli = (c: unknown): AgentCli => (c === "codex" || c === "opencode" ? c : "claude");
+  const toAuth = (a: unknown) => (a === "apiKey" ? "apiKey" : a === "subscription" ? "subscription" : undefined);
 
   const commands: Record<string, (...args: unknown[]) => unknown> = {
     sendTerminalInput: (id, data) => sessions.input(str(id, 80), str(data, 100_000)),
@@ -88,9 +92,10 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
       const used = new Set(team().map((a) => a.color));
       const color = agentPalette.find((c) => !used.has(c)) ?? agentPalette[team().length % agentPalette.length];
       const agent = newAgent(id, name, str(input.role, 40).trim() || "Developer", color, false);
-      agent.cli = input.cli === "codex" ? "codex" : "claude";
+      agent.cli = toCli(input.cli);
+      Object.assign(agent, normalizeAuth(agent.cli, toAuth(input.auth), isProvider(input.provider) ? input.provider : null));
       agent.model = str(input.model, 60).trim();
-      agent.mode = input.mode === "local" ? "local" : "sandbox";
+      agent.mode = "sandbox"; // every agent gets its own Docker Sandbox
       const lead = team().find((a) => a.isLead);
       if (lead) agent.sandbox = structuredClone(lead.sandbox);
       team().push(agent);
@@ -99,26 +104,30 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
       hub.configChanged();
       hub.emit({ type: "agent.updated", agent: structuredClone(status) });
       hub.activity("config", null, `Added ${agent.name} (${agent.role}). Press Start to launch their session.`);
-      if (agent.cli === "codex") void sessions.recheckSetup();
+      if (agent.cli !== "claude") void sessions.recheckSetup();
     },
 
     updateAgent: (id, patch) => {
       const agent = hub.cfg(str(id));
       if (!agent) return;
       const p = (patch ?? {}) as AgentPatch;
-      const before = `${agent.cli}/${agent.mode}`;
+      const before = `${agent.cli}/${agent.mode}/${agent.auth}`;
       for (const k of ["name", "role", "model", "color", "roleMd"] as const) if (typeof p[k] === "string") agent[k] = str(p[k], 8000);
-      if (p.mode === "sandbox" || p.mode === "local") agent.mode = p.mode;
-      if ((p.cli === "claude" || p.cli === "codex") && p.cli !== agent.cli) {
-        agent.cli = p.cli;
+      if (p.cli !== undefined && toCli(p.cli) !== agent.cli) {
+        agent.cli = toCli(p.cli);
         // Model names don't carry over between CLIs.
         if (typeof p.model !== "string") agent.model = "";
       }
+      const provider = isProvider(p.provider) ? p.provider : agent.provider;
+      const auth = normalizeAuth(agent.cli, toAuth(p.auth) ?? agent.auth, provider);
+      // Model names don't carry over between providers either.
+      if (auth.provider !== agent.provider && typeof p.model !== "string") agent.model = "";
+      Object.assign(agent, auth);
       if (Array.isArray(p.skills)) agent.skills = p.skills.map((s) => str(s, 60)).filter(Boolean);
       if (p.workspacePath !== undefined) agent.workspacePath = p.workspacePath ? str(p.workspacePath, 500).trim() || null : null;
       hub.configChanged();
       // Codex agents add their own setup checks.
-      if (`${agent.cli}/${agent.mode}` !== before) void sessions.recheckSetup();
+      if (`${agent.cli}/${agent.mode}/${agent.auth}` !== before) void sessions.recheckSetup();
     },
 
     inspectWorkspace: async (id) => {
@@ -197,6 +206,12 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
       await sbx.refresh();
     },
     refreshSbx: () => sbx.refresh(),
+    openProviderKeys: async () => {
+      const file = keys.ensureFile();
+      const [cmd, args] = process.platform === "darwin" ? ["open", ["-t", file]] : process.platform === "win32" ? ["notepad", [file]] : ["xdg-open", [file]];
+      await run(cmd, args, { timeoutMs: 5000 });
+      keys.publish();
+    },
 
     resolveActionItem: (id, decision, note) => {
       const d = decision === "done" || decision === "dismissed" ? decision : null;
@@ -244,7 +259,7 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
     completeWelcome: async (raw) => {
       if (!hub.snap.welcome) return;
       const input = (raw ?? {}) as Partial<WelcomeInput>;
-      const cli = (c: unknown): AgentCli => (c === "codex" ? "codex" : "claude");
+      const cli = toCli;
       const used = new Set<string>();
       const make = (name: string, role: string, agentCli: AgentCli, isLead: boolean): AgentConfig => {
         const clean = str(name, 40).trim() || (isLead ? "Lead" : "Agent");
@@ -253,6 +268,7 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
         used.add(id);
         const agent = newAgent(id, clean, isLead ? "Lead" : str(role, 40).trim() || "Developer", agentPalette[used.size - 1] ?? agentPalette[0], isLead);
         agent.cli = agentCli;
+        Object.assign(agent, normalizeAuth(agentCli, undefined, null));
         return agent;
       };
       const lead = make(input.lead?.name ?? LEAD_NAME, "Lead", cli(input.lead?.cli), true);

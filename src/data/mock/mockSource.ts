@@ -1,3 +1,4 @@
+import { normalizeAuth } from "../providers";
 import { agentPalette } from "../../theme/tokens";
 import type { OfficeDataSource, OfficeEvent, SimSpeed } from "../source";
 import { stackDomains } from "../stack";
@@ -220,6 +221,7 @@ export function createMockSource(): OfficeDataSource {
       const lead = world.lead();
       const agent: AgentConfig = {
         id, name: input.name.trim() || "Agent", role: input.role.trim() || "Developer", isLead: false, cli: input.cli ?? "claude",
+        ...normalizeAuth(input.cli ?? "claude", input.auth, input.provider),
         model: input.model ?? "", mode: input.mode, color, skills: ["plan", "review"],
         roleMd: `# ${input.name} — ${input.role}\n\nYou build the tasks assigned to you.`,
         sandbox: structuredClone(lead.sandbox),
@@ -306,6 +308,11 @@ export function createMockSource(): OfficeDataSource {
 
     openEnvFile(agentId) {
       hostCmd(agentId, `open ${world.snap.sbx.agents[agentId]?.envFile.path ?? "?"} (mock: nothing opens)`);
+    },
+
+    openProviderKeys() {
+      world.snap.providerKeys = ["anthropic", "deepseek"];
+      world.emit({ type: "providerKeys.updated", providers: [...world.snap.providerKeys] });
     },
 
     refreshSbx() {

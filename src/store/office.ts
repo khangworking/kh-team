@@ -86,6 +86,8 @@ function reduce(snap: OfficeSnapshot, e: OfficeEvent): OfficeSnapshot {
       return snap;
     case "sbx.updated":
       return { ...snap, sbx: e.sbx };
+    case "providerKeys.updated":
+      return { ...snap, providerKeys: e.providers };
     case "setup.updated":
       return { ...snap, setup: e.setup };
     case "config.updated":
@@ -183,6 +185,7 @@ export const officeActions = {
   removeSecret: (agentId: string | null, service: string) => source.removeSecret(agentId, service),
   setProxy: (url: string | null) => source.setProxy(url),
   openEnvFile: (id: string) => source.openEnvFile(id),
+  openProviderKeys: () => source.openProviderKeys(),
   refreshSbx: () => source.refreshSbx(),
   answerApproval: (agentId: string, approvalId: string, decision: "allow" | "dismiss") => source.answerApproval(agentId, approvalId, decision),
   updateWorkflow: source.updateWorkflow.bind(source),

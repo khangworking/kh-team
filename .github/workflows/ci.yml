@@ -28,6 +28,8 @@ jobs:
         run: npx tsx scripts/session-backend-test.ts
       - name: Agent clones (line endings)
         run: npx tsx scripts/workspace-test.ts
+      - name: Reminders for unfinished tasks
+        run: npx tsx scripts/nudge-test.ts
       - name: Pack
         shell: bash
         run: mkdir -p pack && npm pack --ignore-scripts --pack-destination pack

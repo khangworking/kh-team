@@ -25,7 +25,7 @@ export const loadEnvFile = (quotedPath: string) =>
 
 /** The shell line tmux runs. Local mode loads the env file into that shell. */
 export function shellCommand(spec: LaunchSpec): string {
-  const load = spec.envFile ? `${loadEnvFile(shq(spec.envFile))} && ` : "";
+  const load = spec.envFiles.map((f) => `${loadEnvFile(shq(f))} && `).join("");
   return load + [spec.file, ...spec.args].map(q).join(" ");
 }
 

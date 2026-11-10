@@ -1,3 +1,4 @@
+import { PROVIDER_INFO } from "../../data/providers";
 import { CLI_LABEL } from "../../data/types";
 import { selectTeam, useOffice, type AgentView } from "../../store/office";
 import { ui, useUi } from "../../store/ui";
@@ -25,7 +26,9 @@ function AgentCard({ a, focused, n, now }: { a: AgentView; focused: boolean; n: 
       <div className="flex min-w-0 items-baseline gap-1.5">
         <b className="text-[17px]">{a.config.name}</b>
         <span className="truncate text-[13px] text-muted">
-          {a.config.role} · {CLI_LABEL[a.config.cli]}{a.config.model ? ` · ${a.config.model}` : ""}
+          {a.config.role} · {CLI_LABEL[a.config.cli]}
+          {a.config.auth === "apiKey" ? ` · ${PROVIDER_INFO[a.config.provider].label}` : ""}
+          {a.config.model ? ` · ${a.config.model}` : ""}
         </span>
         <span className="kbd ml-auto px-1 text-[13px] leading-none">{n}</span>
       </div>

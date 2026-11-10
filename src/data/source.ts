@@ -1,3 +1,4 @@
+import type { ProviderId } from "./providers";
 import type { StackConfig } from "./stack";
 import type {
   AccessDecision,
@@ -31,6 +32,7 @@ export type OfficeEvent =
   | { type: "snapshot"; snapshot: OfficeSnapshot }
   | { type: "setup.updated"; setup: SetupState }
   | { type: "sbx.updated"; sbx: SbxState }
+  | { type: "providerKeys.updated"; providers: ProviderId[] }
   | { type: "workspace.info"; info: WorkspaceInfo }
   | { type: "config.updated"; config: HqConfig }
   | { type: "agent.updated"; agent: AgentStatus }
@@ -110,6 +112,8 @@ export interface OfficeDataSource {
   setProxy(url: string | null): void;
   /** Creates the agent's env file if needed and opens it in the default editor. */
   openEnvFile(agentId: string): void;
+  /** Creates the office's provider keys file if needed and opens it in the default editor. HQ only reports which keys it has. */
+  openProviderKeys(): void;
   /** Closes an action item; HQ tells the agent (done: with your note; dismissed: continue without it). */
   resolveActionItem(id: string, decision: "done" | "dismissed", note?: string): void;
 

@@ -14,6 +14,7 @@ import { GitHubSync } from "./githubSync";
 import { Inbox } from "./inbox";
 import { Planner } from "./planner";
 import { ActionItems } from "./actionItems";
+import { ProviderKeys } from "./providerKeys";
 import { Sbx } from "./sbx";
 import { SbxMcp } from "./sbxMcp";
 import { run } from "./lib/exec";
@@ -56,6 +57,13 @@ async function main() {
   sessions.lastHookAt = (id) => inbox.lastHookAt(id);
   const sbx = new Sbx(hub);
   sessions.envFileFor = (id) => (existsSync(sbx.envFile(id)) ? sbx.envFile(id) : null);
+  const keys = new ProviderKeys(hub);
+  keys.publish();
+  setInterval(() => keys.publish(), 3000).unref();
+  sessions.providerEnvFor = (id) => {
+    const agent = hub.cfg(id);
+    return agent ? keys.launchEnv(agent) : null;
+  };
   const mcp = new SbxMcp(hub, (id, file, args, onExit) => sessions.runTerminal(id, file, args, onExit));
   sessions.onSandboxReady = (id) => {
     void sbx.syncRules(id);
@@ -90,7 +98,7 @@ async function main() {
     agentToken: token,
     distDir: dev ? null : distDir,
     allowedOrigins: [uiOrigin, `http://127.0.0.1:${uiPort}`, `http://localhost:${port}`, `http://127.0.0.1:${port}`],
-    commands: makeCommands(hub, sessions, planner, inbox, sbx, mcp),
+    commands: makeCommands(hub, sessions, planner, inbox, sbx, mcp, keys),
   });
   sessions.startPolling();
   sbx.startApprovalPolling();

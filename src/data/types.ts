@@ -1,3 +1,4 @@
+import type { ProviderId } from "./providers";
 import type { StackConfig } from "./stack";
 // Domain types shared by the data source, the store, the office and the HUD.
 
@@ -26,9 +27,12 @@ export interface SandboxSettings {
 export type AgentMode = "sandbox" | "local";
 
 /** Which coding agent CLI runs in the sandbox. */
-export type AgentCli = "claude" | "codex";
+export type AgentCli = "claude" | "codex" | "opencode";
 
-export const CLI_LABEL: Record<AgentCli, string> = { claude: "Claude Code", codex: "Codex" };
+export const CLI_LABEL: Record<AgentCli, string> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode" };
+
+/** How the CLI pays for the model: its own subscription sign-in, or an API key from the office's keys file. */
+export type AgentAuth = "subscription" | "apiKey";
 
 export interface AgentConfig {
   id: string; // "john"
@@ -36,6 +40,8 @@ export interface AgentConfig {
   role: string; // "Lead" | "Developer" | "QA" | anything
   isLead: boolean;
   cli: AgentCli;
+  auth: AgentAuth;
+  provider: ProviderId; // subscription: the CLI's own (anthropic/openai); API key: any provider the CLI supports
   model: string; // optional start model ("" = the CLI's default; users can switch with /model)
   mode: AgentMode;
   color: string; // hex, used for the robot, owner dots and chips
@@ -343,6 +349,8 @@ export interface OfficeSnapshot {
   accessRequests?: AccessRequest[];
   mcp?: McpState;
   actionItems?: ActionItem[];
+  /** Providers whose key is in the office's provider keys file (names only, never values). */
+  providerKeys?: ProviderId[];
 }
 
 /** Something an agent needs the user to do outside its sandbox (Team MCP `ask_user`). */
@@ -365,6 +373,8 @@ export interface NewAgentInput {
   name: string;
   role: string;
   cli?: AgentCli;
+  auth?: AgentAuth;
+  provider?: ProviderId;
   model?: string;
   mode: AgentMode;
 }
@@ -381,7 +391,7 @@ export interface WelcomeInput {
 }
 
 export type AgentPatch = Partial<
-  Pick<AgentConfig, "name" | "role" | "cli" | "model" | "mode" | "color" | "skills" | "roleMd" | "workspacePath">
+  Pick<AgentConfig, "name" | "role" | "cli" | "auth" | "provider" | "model" | "mode" | "color" | "skills" | "roleMd" | "workspacePath">
 >;
 
 export interface WorkflowPatch {

@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { join } from "node:path";
 import type { AgentConfig, Board, HqConfig, SandboxSettings, Task } from "../src/data/types";
 import { LEAD_NAME, WORKER_NAMES } from "../src/data/names";
+import { normalizeAuth } from "../src/data/providers";
 import { slugify } from "./paths";
 import type { RepoInfo } from "./repo";
 
@@ -41,8 +42,10 @@ export function newAgent(id: string, name: string, role: string, color: string, 
     role,
     isLead,
     cli: "claude",
+    auth: "subscription",
+    provider: "anthropic",
     model: "", // the CLI's default; users can pick with /model or "Start with model"
-    mode: "sandbox",
+    mode: "sandbox", // every agent runs in its own Docker Sandbox
     color,
     skills: [],
     roleMd: isLead
@@ -76,6 +79,9 @@ export function loadConfig(repo: RepoInfo, port: number): { config: HqConfig; is
       a.workspacePath ??= null;
       a.mcp ??= [];
       a.cli ??= "claude";
+      if ((a.cli as string) === "pi") a.cli = "opencode"; // Pi was tried in P0, then OpenCode came back
+      a.mode = "sandbox"; // every agent runs in its own Docker Sandbox
+      Object.assign(a, normalizeAuth(a.cli, a.auth, a.provider));
       a.sandbox.resources ??= { cpus: null, memoryGb: null };
       // Phase D: policy level, proxy and secret names moved to sbx itself.
       const old = a.sandbox as unknown as Record<string, unknown>;
