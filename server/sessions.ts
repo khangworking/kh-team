@@ -66,6 +66,8 @@ export class Sessions {
   envFileFor: (agentId: string) => string | null = () => null;
   /** API-key agents: an env file with just their provider's key (throws when it's missing). */
   providerEnvFor: (agentId: string) => string | null = () => null;
+  /** True when the daily budget is used up and this agent uses an API key. */
+  budgetBlocks: (agentId: string) => boolean = () => false;
   /** Called when HQ reattaches to a session that was already running (e.g. after an HQ restart). */
   onSessionReattached: (agentId: string) => void = () => {};
   /** When the agent's last hook arrived (from the inbox). */
@@ -98,6 +100,7 @@ export class Sessions {
     const check = (cid: string) => setup.checks.find((c) => c.id === cid)?.status;
     if (agent.mode === "local" && agent.cli === "claude" && check("claude") !== "ok") return fail("Claude Code isn't installed. See the setup checklist.");
     if (agent.mode === "local" && agent.cli === "codex" && check("codex") !== "ok") return fail("Codex isn't installed on this machine. See the setup checklist, or run this agent in a sandbox.");
+    if (this.budgetBlocks(id)) return fail("Today's budget is used up, so agents that use an API key can't start. Raise the daily budget in Settings → Workflow, or wait until midnight.");
     if (agent.mode !== "sandbox") return fail(`${agent.name} must run in a Docker Sandbox. Every agent gets its own sandbox.`);
     if (agent.mode === "sandbox" && agent.cli === "codex" && check("openai-secret") !== "ok")
       return fail("Codex needs an OpenAI key in sbx. Run `sbx secret set openai --oauth` (Setup checklist → Run in terminal).");

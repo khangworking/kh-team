@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { join } from "node:path";
 import type { AgentConfig, Board, HqConfig, SandboxSettings, Task } from "../src/data/types";
 import { LEAD_NAME, WORKER_NAMES } from "../src/data/names";
+import { DEFAULT_DAILY_BUDGET_USD } from "../src/data/budget";
 import { normalizeAuth } from "../src/data/providers";
 import { slugify } from "./paths";
 import type { RepoInfo } from "./repo";
@@ -64,6 +65,7 @@ function defaultConfig(repo: RepoInfo, port: number): HqConfig {
     workflow: {
       review: { enabled: true, tool: repo.hasCodeRabbit ? "coderabbit" : "human", command: "" },
       merge: { by: "human" },
+      budget: { dailyUsd: DEFAULT_DAILY_BUDGET_USD },
       deploy: { enabled: repo.hasInsta, tool: "instacloud", command: "", perAgentEnvironments: repo.hasInsta },
     },
   };
@@ -93,6 +95,7 @@ export function loadConfig(repo: RepoInfo, port: number): { config: HqConfig; is
     // Slugified again in case the file was edited by hand: it ends up in paths and sandbox names.
     found.project.id = slugify(found.project.id ?? found.project.name);
     found.project.path = repo.root;
+    found.workflow.budget ??= { dailyUsd: DEFAULT_DAILY_BUDGET_USD };
     return { config: found, isNew: false };
   }
   return { config: defaultConfig(repo, port), isNew: true };

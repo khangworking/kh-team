@@ -1,6 +1,7 @@
 // Claude Code / Codex hooks → agent state. Each agent's hooks POST to
 // /hook/<agentId>/<Event> with the hook's JSON payload.
 
+import type { Budget } from "./budget";
 import type { Hub } from "./hub";
 import type { Inbox } from "./inbox";
 
@@ -11,6 +12,9 @@ interface HookPayload {
   notification_type?: string;
   /** StopFailure: what ended the turn (a rate limit, no credit, a bad key or model). */
   error?: unknown;
+  /** Cost: this step's USD. StatusLine (Claude Code): { total_cost_usd } for the whole session. */
+  cost?: number | { total_cost_usd?: number };
+  session_id?: string;
 }
 
 const clip = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
@@ -71,10 +75,20 @@ export interface HookResult {
   response?: Record<string, unknown>;
 }
 
-export function handleHook(hub: Hub, inbox: Inbox, agentId: string, event: string, body: HookPayload): HookResult {
+export function handleHook(hub: Hub, inbox: Inbox, agentId: string, event: string, body: HookPayload, budget?: Pick<Budget, "record" | "recordTotal">): HookResult {
   const st = hub.status(agentId);
   const name = hub.name(agentId);
   if (!st) return { ok: false };
+  // Cost reports say nothing about what the agent is doing, so they don't count as activity.
+  if (event === "Cost") {
+    if (typeof body.cost === "number") budget?.record(agentId, body.cost);
+    return { ok: true };
+  }
+  if (event === "StatusLine") {
+    const total = typeof body.cost === "object" ? body.cost?.total_cost_usd : undefined;
+    if (typeof total === "number") budget?.recordTotal(agentId, String(body.session_id ?? ""), total);
+    return { ok: true };
+  }
   inbox.noteHook(agentId, event);
 
   switch (event) {

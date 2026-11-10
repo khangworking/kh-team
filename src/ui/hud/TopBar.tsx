@@ -1,3 +1,5 @@
+import { budgetLevel, formatUsd } from "../../data/budget";
+import { PROVIDER_INFO } from "../../data/providers";
 import type { SimSpeed } from "../../data/source";
 import { officeActions, selectAttention, useOffice } from "../../store/office";
 import { ui, useUi } from "../../store/ui";
@@ -36,6 +38,10 @@ export function TopBar() {
   const boards = [...snap.boards].sort((a, b) => a.order - b.order);
   const active = boards.filter((b) => b.status === "active");
   const openPrs = snap.pullRequests.filter((p) => !p.merged && !p.closed).length;
+  // Spend only matters once an agent pays per call: an API key for a hosted provider (Ollama is free).
+  const budget = snap.budget;
+  const paid = snap.config.team.some((a) => a.auth === "apiKey" && PROVIDER_INFO[a.provider].keyVar);
+  const level = budget ? budgetLevel(budget.spentUsd, budget.dailyUsd) : "ok";
 
   return (
     <header className="panel fixed left-4 right-4 top-[10px] z-10 flex h-[50px] items-center gap-4 px-3">
@@ -89,6 +95,17 @@ export function TopBar() {
           +
         </button>
       </div>
+
+      {live && budget && (paid || budget.spentUsd > 0) && (
+        <button
+          className={`btn whitespace-nowrap text-[14px] ${level === "over" ? "bg-red text-white" : level === "warn" ? "bg-yellow" : ""}`}
+          onClick={() => ui.openSettings("workflow")}
+          title={`Spent today by agents that use an API key${budget.dailyUsd > 0 ? `, of a ${formatUsd(budget.dailyUsd)} daily budget` : " (no daily limit)"}. Click to change the budget.`}
+        >
+          Today · <b>{formatUsd(budget.spentUsd)}</b>
+          {budget.dailyUsd > 0 ? ` / ${formatUsd(budget.dailyUsd)}` : ""}
+        </button>
+      )}
 
       <div
         className="flex items-center gap-2 whitespace-nowrap border-[3px] border-ink bg-navy px-2.5 py-0.5 text-[15px] text-cream"

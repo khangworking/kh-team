@@ -45,6 +45,7 @@ function summary(e: OfficeEvent): string {
     case "message": return `${e.message.fromId} → ${e.message.toId}`;
     case "activity": return e.event.text;
     case "terminal.output": return `${e.agentId} +${e.data.length}`;
+    case "budget.updated": return `$${e.budget.spentUsd.toFixed(2)} of $${e.budget.dailyUsd}`;
     case "action.updated": return `${e.item.fromId} ${e.item.status}: ${e.item.title}`;
     case "mcp.updated": return `${e.mcp.servers.length} MCP servers`;
     case "access.updated": return `${e.request.agentId} ${e.request.domain} ${e.request.status}`;

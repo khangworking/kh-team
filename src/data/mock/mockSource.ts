@@ -400,6 +400,7 @@ export function createMockSource(): OfficeDataSource {
       Object.assign(wf.review, patch.review);
       Object.assign(wf.merge, patch.merge);
       Object.assign(wf.deploy, patch.deploy);
+      if (typeof patch.budget?.dailyUsd === "number") wf.budget = { dailyUsd: Math.max(0, patch.budget.dailyUsd) };
       world.configChanged();
       world.syncEnvironments();
       sim.workflowChanged();

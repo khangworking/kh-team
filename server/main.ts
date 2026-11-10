@@ -15,6 +15,7 @@ import { Inbox } from "./inbox";
 import { Planner } from "./planner";
 import { ActionItems } from "./actionItems";
 import { ProviderKeys } from "./providerKeys";
+import { Budget } from "./budget";
 import { Sbx } from "./sbx";
 import { SbxMcp } from "./sbxMcp";
 import { run } from "./lib/exec";
@@ -82,6 +83,10 @@ async function main() {
   void mcp.refresh();
   const planner = new Planner(hub, inbox);
   planner.actions = new ActionItems(hub, planner);
+  const budget = new Budget(hub, { stop: (ids) => ids.forEach((id) => void sessions.stop(id)), notice: (title, details) => void planner.actions?.add("hq", title, details, false) });
+  sessions.budgetBlocks = (id) => budget.blocks(id);
+  budget.refresh();
+  setInterval(() => budget.refresh(), 30_000).unref(); // midnight starts a new day
 
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
   const distDir = join(root, "dist");
@@ -93,12 +98,13 @@ async function main() {
     hub,
     inbox,
     planner,
+    budget,
     port,
     browserToken: uiToken,
     agentToken: token,
     distDir: dev ? null : distDir,
     allowedOrigins: [uiOrigin, `http://127.0.0.1:${uiPort}`, `http://localhost:${port}`, `http://127.0.0.1:${port}`],
-    commands: makeCommands(hub, sessions, planner, inbox, sbx, mcp, keys),
+    commands: makeCommands(hub, sessions, planner, inbox, sbx, mcp, keys, budget),
   });
   sessions.startPolling();
   sbx.startApprovalPolling();
@@ -117,6 +123,7 @@ async function main() {
   const quit = () => {
     log.info(sessions.backend.persistent ? "stopping HQ — agent sessions keep running in tmux" : "stopping HQ and its agents — sandboxes and folders are kept");
     sessions.shutdown();
+    budget.flush();
     sbx.stopApprovalPolling();
     github.stop();
     process.exit(0);

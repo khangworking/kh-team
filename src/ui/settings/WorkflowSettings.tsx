@@ -1,3 +1,4 @@
+import { budgetLevel, formatUsd } from "../../data/budget";
 import type { DeployTool, ReviewTool } from "../../data/types";
 import { deployToolLabel, officeActions, reviewToolLabel, useOffice } from "../../store/office";
 import { Field, SectionTitle } from "../kit";
@@ -13,6 +14,8 @@ const REVIEW_HINT: Record<ReviewTool, string> = {
 
 export function WorkflowSettings() {
   const wf = useOffice((s) => s.snap?.config.workflow);
+  const budget = useOffice((s) => s.snap?.budget);
+  const team = useOffice((s) => s.snap?.config.team);
   // Deploy isn't built in real HQ yet (only the demo shows environments), so it's shown as coming soon.
   const live = useOffice((s) => s.live);
   if (!wf) return null;
@@ -83,6 +86,42 @@ export function WorkflowSettings() {
           ))}
         </div>
         <p className="mt-2 text-[12px] text-muted">The lead always sets the merge order and handles conflicts between PRs.</p>
+      </section>
+
+      <section className="border-[3px] border-ink bg-white p-3">
+        <SectionTitle>Daily budget</SectionTitle>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Limit per day (USD)" hint="For the whole office, agents that use an API key only. 0 = no limit. The count starts again at midnight.">
+            <CommitInput
+              className="field"
+              value={String(wf.budget?.dailyUsd ?? 0)}
+              onCommit={(v) => {
+                const n = Number(v.replace(",", "."));
+                if (Number.isFinite(n) && n >= 0) officeActions.updateWorkflow({ budget: { dailyUsd: n } });
+              }}
+            />
+          </Field>
+          <Field label="Spent today">
+            <div className={`text-[20px] ${budget && budgetLevel(budget.spentUsd, budget.dailyUsd) === "over" ? "text-red" : ""}`}>
+              {formatUsd(budget?.spentUsd ?? 0)}
+              {wf.budget?.dailyUsd ? <span className="text-[13px] text-muted"> of {formatUsd(wf.budget.dailyUsd)}</span> : null}
+            </div>
+          </Field>
+        </div>
+        {budget && Object.keys(budget.perAgent).length > 0 && (
+          <ul className="m-0 mt-2 list-none p-0 text-[13px]">
+            {Object.entries(budget.perAgent).map(([id, usd]) => (
+              <li key={id}>
+                {team?.find((a) => a.id === id)?.name ?? id}: {formatUsd(usd)}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-2 text-[12px] text-muted">
+          At 80% HQ warns you. At 100% it stops the agents that use an API key and won't start them until midnight or until you raise the limit. Subscription agents
+          and Ollama cost nothing here. Claude Code on DeepSeek or OpenRouter is priced as if it were Claude, so the figure is an estimate. Codex agents with an API key are
+          not counted yet.
+        </p>
       </section>
 
       {live ? (
