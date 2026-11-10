@@ -55,6 +55,10 @@ export default Plugin.define({
           case "session.tool.failed":
             void post("PostToolUse")
             break
+          case "session.step.ended":
+            // What this model call cost, in USD (0 for a local model).
+            if (Number(data.cost) > 0) void post("Cost", { cost: Number(data.cost) })
+            break
           case "session.execution.succeeded":
             void post("Idle")
             break

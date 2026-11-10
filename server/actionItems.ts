@@ -43,7 +43,7 @@ export class ActionItems {
     const item: ActionItem = {
       id: `ai${Date.now().toString(36)}${++this.seq}`,
       fromId,
-      taskId: this.planner.currentTask(fromId)?.id ?? null,
+      taskId: fromId === "hq" ? null : (this.planner.currentTask(fromId)?.id ?? null),
       title: clean,
       details: details.trim().slice(0, 4000),
       waiting,

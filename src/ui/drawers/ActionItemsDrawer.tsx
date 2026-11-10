@@ -84,7 +84,7 @@ export function ActionItemsDrawer() {
               <ul className="mt-2 flex flex-col gap-1 text-[13px] text-muted">
                 {closed.map((i) => (
                   <li key={i.id} className="border-t-2 border-dashed border-cream-3 py-1">
-                    <span className={i.status === "dismissed" ? "line-through" : ""}>{i.title}</span> · {agent(i.fromId)?.name ?? i.fromId} ·{" "}
+                    <span className={i.status === "dismissed" ? "line-through" : ""}>{i.title}</span> · {agent(i.fromId)?.name ?? (i.fromId === "hq" ? "HQ" : i.fromId)} ·{" "}
                     {i.status} {i.closedAt ? `${ago(i.closedAt, now)} ago` : ""}
                     {i.note && <div className="pl-3">“{i.note}”</div>}
                   </li>
@@ -123,7 +123,7 @@ function Item({ item, from, now }: { item: ActionItem; from?: { id: string; name
       <div className="mb-1 flex items-center gap-1.5 text-[12px] text-muted">
         {from && <Dot color={from.color} size={8} />}
         <button className="underline" onClick={() => from && ui.openAgent(from.id, "messages")}>
-          {from?.name ?? item.fromId}
+          {from?.name ?? (item.fromId === "hq" ? "HQ" : item.fromId)}
         </button>
         {item.taskId && <span>· {item.taskId}</span>}
         <span>· {ago(item.at, now)} ago</span>

@@ -12,6 +12,8 @@ import { Hub } from "./hub";
 import type { Inbox } from "./inbox";
 import type { Planner } from "./planner";
 import type { ProviderKeys } from "./providerKeys";
+import type { Budget } from "./budget";
+import { MAX_DAILY_BUDGET_USD } from "../src/data/budget";
 import type { Sbx } from "./sbx";
 import type { SbxMcp } from "./sbxMcp";
 import type { Sessions } from "./sessions";
@@ -47,7 +49,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 const str = (v: unknown, max = 2000) => (typeof v === "string" ? v.slice(0, max) : "");
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inbox: Inbox, sbx: Sbx, mcp: SbxMcp, keys: ProviderKeys) {
+export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inbox: Inbox, sbx: Sbx, mcp: SbxMcp, keys: ProviderKeys, budget: Budget) {
   /** Runs an sbx change and reports failures in the activity feed. */
   const attempt = async (agentId: string | null, what: string, fn: () => Promise<void>) => {
     try {
@@ -303,7 +305,10 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
       Object.assign(wf.review, p.review ?? {});
       if (p.merge?.by === "human" || p.merge?.by === "lead") wf.merge.by = p.merge.by;
       Object.assign(wf.deploy, p.deploy ?? {});
+      const limit = p.budget?.dailyUsd;
+      if (typeof limit === "number" && Number.isFinite(limit)) wf.budget = { dailyUsd: Math.round(Math.min(Math.max(limit, 0), MAX_DAILY_BUDGET_USD) * 100) / 100 };
       hub.configChanged();
+      budget.refresh();
       // The lead was told the old rule; tell it the new one now, so no restart is needed.
       const lead = hub.snap.config.team.find((a) => a.isLead);
       if (lead && wf.merge.by !== mergeBy) {

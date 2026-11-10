@@ -85,6 +85,8 @@ export type DeployTool = "instacloud" | "vercel" | "custom";
 export interface WorkflowConfig {
   review: { enabled: boolean; tool: ReviewTool; command: string };
   merge: { by: "human" | "lead" };
+  /** Daily spend limit for agents that use an API key, in USD for the whole office. 0 = no limit (spend is still tracked). */
+  budget: { dailyUsd: number };
   deploy: { enabled: boolean; tool: DeployTool; command: string; perAgentEnvironments: boolean };
 }
 
@@ -351,6 +353,17 @@ export interface OfficeSnapshot {
   actionItems?: ActionItem[];
   /** Providers whose key is in the office's provider keys file (names only, never values). */
   providerKeys?: ProviderId[];
+  /** Today's spend by agents that use an API key, against the office's daily limit. */
+  budget?: BudgetState;
+}
+
+export interface BudgetState {
+  dailyUsd: number; // 0 = no limit
+  spentUsd: number;
+  perAgent: Record<string, number>;
+  day: string; // local date, YYYY-MM-DD
+  /** The limit is reached: API-key agents are stopped and can't start until midnight or a higher limit. */
+  exceeded: boolean;
 }
 
 /** Something an agent needs the user to do outside its sandbox (Team MCP `ask_user`). */
@@ -398,4 +411,5 @@ export interface WorkflowPatch {
   review?: Partial<WorkflowConfig["review"]>;
   merge?: Partial<WorkflowConfig["merge"]>;
   deploy?: Partial<WorkflowConfig["deploy"]>;
+  budget?: Partial<WorkflowConfig["budget"]>;
 }

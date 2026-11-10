@@ -11,6 +11,7 @@ import type {
   AgentPatch,
   AgentStatus,
   Board,
+  BudgetState,
   Environment,
   HqConfig,
   NewAgentInput,
@@ -33,6 +34,7 @@ export type OfficeEvent =
   | { type: "setup.updated"; setup: SetupState }
   | { type: "sbx.updated"; sbx: SbxState }
   | { type: "providerKeys.updated"; providers: ProviderId[] }
+  | { type: "budget.updated"; budget: BudgetState }
   | { type: "workspace.info"; info: WorkspaceInfo }
   | { type: "config.updated"; config: HqConfig }
   | { type: "agent.updated"; agent: AgentStatus }

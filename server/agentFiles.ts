@@ -202,7 +202,12 @@ export function writeSettings(dir: string, agent: AgentConfig, port: number, tok
   }
   // Let the agent use the Team MCP without a permission prompt for every call.
   const allow = new Set([...(settings.permissions?.allow ?? []), "mcp__hq"]);
-  agentWrite(dir, file, JSON.stringify({ ...settings, hooks, permissions: { ...(settings.permissions ?? {}), allow: [...allow] } }, null, 2) + "\n");
+  // Claude Code's status line carries the session's running cost. HQ reads it for agents that use an API key
+  // (the daily budget). A status line the user set up themselves is left alone.
+  const { statusLine: current, ...rest } = settings;
+  const mine = !current || isOurs(String((current as { command?: unknown }).command ?? ""));
+  const statusLine = !mine ? current : agent.auth === "apiKey" ? { type: "command", command: hookCommand(`${hqUrl(agent, port)}`, token, agent.id, "StatusLine", script) } : undefined;
+  agentWrite(dir, file, JSON.stringify({ ...rest, ...(statusLine ? { statusLine } : {}), hooks, permissions: { ...(settings.permissions ?? {}), allow: [...allow] } }, null, 2) + "\n");
 }
 
 /** Team MCP config: HQ's URL plus this agent's identity and token. */

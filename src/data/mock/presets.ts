@@ -77,6 +77,7 @@ const askwell: Preset = {
     workflow: {
       review: { enabled: true, tool: "coderabbit", command: "" },
       merge: { by: "human" },
+      budget: { dailyUsd: 10 },
       deploy: { enabled: true, tool: "instacloud", command: "", perAgentEnvironments: true },
     },
   },
@@ -135,6 +136,7 @@ const bigTeam: Preset = {
     workflow: {
       review: { enabled: true, tool: "greptile", command: "" },
       merge: { by: "lead" },
+      budget: { dailyUsd: 10 },
       deploy: { enabled: true, tool: "vercel", command: "", perAgentEnvironments: false },
     },
   },
@@ -181,6 +183,7 @@ const duo: Preset = {
     workflow: {
       review: { enabled: true, tool: "human", command: "" },
       merge: { by: "human" },
+      budget: { dailyUsd: 10 },
       deploy: { enabled: false, tool: "custom", command: "", perAgentEnvironments: false },
     },
   },

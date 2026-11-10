@@ -10,6 +10,7 @@ import { extname, join, normalize } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { OfficeEvent } from "../src/data/source";
+import type { Budget } from "./budget";
 import { handleHook } from "./hooks";
 import type { Hub } from "./hub";
 import type { Inbox } from "./inbox";
@@ -46,6 +47,7 @@ interface Options {
   hub: Hub;
   inbox: Inbox;
   planner: Planner;
+  budget: Budget;
   port: number;
   browserToken: string;
   agentToken: string;
@@ -69,7 +71,7 @@ export function startHttp(o: Options) {
       const [, , agentId, event] = url.pathname.split("/");
       try {
         const body = await readBody(req);
-        const r = handleHook(o.hub, o.inbox, decodeURIComponent(agentId ?? ""), event ?? "", body ? JSON.parse(body) : {});
+        const r = handleHook(o.hub, o.inbox, decodeURIComponent(agentId ?? ""), event ?? "", body ? JSON.parse(body) : {}, o.budget);
         if (!r.ok) return send(res, 404, "");
         if (r.response) return send(res, 200, JSON.stringify(r.response), "application/json");
         res.writeHead(204);
