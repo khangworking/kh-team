@@ -142,7 +142,19 @@ export class Sessions {
           // sbx only accepts a size when it creates the sandbox; an existing (stopped) one keeps its size,
           // and passing --cpus/--memory again makes `sbx run` fail. "Recreate sandbox" applies a new size.
           const { cpus, memoryGb } = agent.sandbox.resources;
-          const isNew = !(await this.sandboxExists(name));
+          let existing = await this.sandboxAgent(name);
+          // A sandbox is built for one CLI. After the agent's CLI changed, the old one can't run the new CLI: replace it.
+          // The agent's folder is on the host and stays; what's lost is the old sandbox's own state (its CLI's conversation).
+          if (existing && existing !== launch.sbxAgent) {
+            hub.setSession(id, { detail: `Replacing the ${existing} sandbox with a ${launch.sbxAgent} one…` });
+            const rm = await run("sbx", ["rm", "-f", name], { timeoutMs: 60_000 });
+            if (!rm.ok && !/not found|no such/i.test(rm.stderr)) throw new Error(`Could not remove ${name}, which was made for ${existing}: ${rm.stderr.trim()}`);
+            this.onSandboxRemoved(id);
+            hub.setSession(id, { sandbox: null });
+            hub.activity("session", id, `${agent.name}'s CLI changed from ${existing} to ${launch.sbxAgent}: HQ replaced its sandbox. The folder was kept.`);
+            existing = null;
+          }
+          const isNew = !existing;
           const size = !isNew ? [] : [...(cpus ? ["--cpus", String(cpus)] : []), ...(memoryGb ? ["--memory", `${Math.round(memoryGb * 1024)}m`] : [])];
           // The provider key enters the VM as a variable: the sandbox, not the key, is the boundary.
           const env = [...envFiles.flatMap((f) => ["--env-file", f]), "-e", `BROWSER=${SANDBOX_BROWSER}`];
@@ -232,13 +244,13 @@ export class Sessions {
     return done;
   }
 
-  /** True if sbx lists a sandbox with this name (running or stopped). */
-  private async sandboxExists(name: string): Promise<boolean> {
+  /** The CLI an existing sandbox (running or stopped) was made for, or null when there is none. */
+  private async sandboxAgent(name: string): Promise<string | null> {
     const r = await run("sbx", ["ls", "--json"], { timeoutMs: 10_000 });
     try {
-      return (sandboxList(r.stdout) ?? []).some((s) => s.name === name);
+      return (sandboxList<{ name: string; agent?: string }>(r.stdout) ?? []).find((s) => s.name === name)?.agent ?? null;
     } catch {
-      return false;
+      return null;
     }
   }
 
