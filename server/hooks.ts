@@ -2,6 +2,7 @@
 // /hook/<agentId>/<Event> with the hook's JSON payload.
 
 import type { Budget } from "./budget";
+import { isOutOfCredit, type OutOfCredit } from "./outOfCredit";
 import type { Hub } from "./hub";
 import type { Inbox } from "./inbox";
 import type { RateLimits } from "./rateLimits";
@@ -18,6 +19,9 @@ interface HookPayload {
   session_id?: string;
   /** StatusLine (Claude Code subscribers): the 5-hour and weekly usage windows. */
   rate_limits?: unknown;
+  /** StopFailure: more about the error (Claude Code). */
+  error_details?: unknown;
+  last_assistant_message?: string;
 }
 
 const clip = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
@@ -86,6 +90,7 @@ export function handleHook(
   body: HookPayload,
   budget?: Pick<Budget, "record" | "recordTotal">,
   limits?: Pick<RateLimits, "observe" | "hit" | "resumed" | "turnEnded">,
+  credit?: Pick<OutOfCredit, "handle" | "clear">,
 ): HookResult {
   const st = hub.status(agentId);
   const name = hub.name(agentId);
@@ -111,6 +116,8 @@ export function handleHook(
   switch (event) {
     case "SessionStart":
       turnOpen.set(agentId, false);
+      credit?.clear(agentId); // a new session: the user has had the chance to add credit
+
       hub.setStatus(agentId, { state: "idle", note: "Ready" });
       break;
     case "UserPromptSubmit":
@@ -188,6 +195,12 @@ export function handleHook(
         break;
       }
       const why = typeof body.error === "string" ? body.error : body.error ? JSON.stringify(body.error) : "API error";
+      // An API key with no credit left: summarize the work into the task, put it back in todo and on hold (outOfCredit.ts).
+      const detail = [why, typeof body.error_details === "string" ? body.error_details : "", body.last_assistant_message ?? ""].filter(Boolean).join(" ");
+      if (credit && hub.cfg(agentId)?.auth === "apiKey" && isOutOfCredit(detail)) {
+        void credit.handle(agentId, typeof body.error_details === "string" && body.error_details ? body.error_details : why);
+        break;
+      }
       hub.setStatus(agentId, { state: "needs-input", note: `Provider error: ${clip(why, 100)}` });
       hub.activity("agent.needs-input", agentId, `${name} stopped on a provider error: ${clip(why, 60)}`);
       break;

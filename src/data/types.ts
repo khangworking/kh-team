@@ -148,6 +148,8 @@ export interface AgentStatus {
    * paused: its work is saved and HQ holds it until the reset. blocked: the limit is reached.
    */
   limitPhase?: "winding-down" | "paused" | "blocked" | null;
+  /** An agent with an API key ran out of credit: why. It can't work until the user adds credit (or changes the key) and restarts it. */
+  outOfCredit?: string | null;
   session: SessionInfo;
 }
 
@@ -195,6 +197,8 @@ export interface Task {
   files?: string[]; // the only files this task may edit
   doneWhen?: string; // acceptance criteria
   note?: string | null; // e.g. why it's blocked
+  /** On hold: only the user may assign it (HQ put it back in todo after its agent ran out of credit). The text says why. */
+  hold?: string | null;
 }
 
 export type ReviewState = "pending" | "reviewing" | "changes-requested" | "passed";

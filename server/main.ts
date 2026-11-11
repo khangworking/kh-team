@@ -16,6 +16,7 @@ import { Planner } from "./planner";
 import { ActionItems } from "./actionItems";
 import { ProviderKeys } from "./providerKeys";
 import { Budget } from "./budget";
+import { OutOfCredit } from "./outOfCredit";
 import { RateLimits } from "./rateLimits";
 import { Sbx } from "./sbx";
 import { SbxMcp } from "./sbxMcp";
@@ -88,6 +89,7 @@ async function main() {
   sessions.budgetBlocks = (id) => budget.blocks(id);
   const limits = new RateLimits(hub, { notify: (id, text) => planner.notify(id, text) });
   sessions.rateLimits = limits;
+  const credit = new OutOfCredit(hub, planner, { dirOf: (id) => hub.status(id)?.session.workspace ?? null, notice: (title, details) => void planner.actions?.add("hq", title, details, false) });
   budget.refresh();
   setInterval(() => budget.refresh(), 30_000).unref(); // midnight starts a new day
 
@@ -103,6 +105,7 @@ async function main() {
     planner,
     budget,
     limits,
+    credit,
     port,
     browserToken: uiToken,
     agentToken: token,

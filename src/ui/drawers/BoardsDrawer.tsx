@@ -101,6 +101,11 @@ function TaskCard({ task }: { task: Task }) {
         {task.title}
       </div>
       {task.status === "blocked" && task.note && <div className="text-[12px] text-red">{task.note}</div>}
+      {task.hold && (
+        <div className="mt-1 border-2 border-red bg-[#ffe1ea] px-1.5 py-0.5 text-[12px] text-red" title={task.note ?? undefined}>
+          On hold: {task.hold}. It stays unassigned until you assign it. Hover for the summary of the work so far.
+        </div>
+      )}
       <div className="mt-1 flex items-center gap-1.5 text-[12px]">
         {owner ? (
           <>

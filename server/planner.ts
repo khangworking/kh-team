@@ -16,7 +16,7 @@ export interface NewTask {
   needs?: string[];
 }
 
-export type TaskPatch = Partial<Pick<Task, "title" | "description" | "files" | "doneWhen" | "needs" | "status" | "boardId" | "note" | "prNumber">>;
+export type TaskPatch = Partial<Pick<Task, "title" | "description" | "files" | "doneWhen" | "needs" | "status" | "boardId" | "note" | "prNumber" | "ownerId" | "hold">>;
 
 const now = () => new Date().toISOString();
 
@@ -111,9 +111,13 @@ export class Planner {
     if (!task) throw new Error(`No task ${taskId}`);
     if (!agentId) throw new Error(`No agent "${agentRef}". Team: ${this.snap.config.team.map((a) => a.id).join(", ")}`);
     const agent = this.hub.cfg(agentId)!;
+    // A task HQ put back after its agent ran out of credit is assigned again only when the user says so.
+    if (task.hold && byId !== "you") throw new Error(`${task.id} is on hold (${task.hold}). Only the user assigns it again: leave it in todo until they say so.`);
+    if (this.hub.status(agentId)?.outOfCredit && byId !== "you") throw new Error(`${agent.name} is out of credit and can't work until the user adds credit and restarts it. Assign someone else.`);
     const limited = this.hub.status(agentId)?.limitedUntil;
     if (limited && Date.parse(limited) > Date.now()) throw new Error(`${agent.name} has hit its usage limit and can't work until ${formatReset(limited)}. Assign someone else, or wait.`);
     task.ownerId = agentId;
+    task.hold = null; // the user decided
     if (task.status === "done") task.status = "todo";
     this.hub.emit({ type: "task.updated", task: { ...task } });
     this.hub.setStatus(agentId, { currentTaskId: task.id });
