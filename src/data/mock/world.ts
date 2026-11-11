@@ -235,7 +235,7 @@ export class World {
 
   reviewerLabel(): string {
     const r = this.snap.config.workflow.review;
-    return { coderabbit: "CodeRabbit", greptile: "Greptile", copilot: "Copilot", human: "you", custom: "the review check" }[r.tool];
+    return { coderabbit: "CodeRabbit", greptile: "Greptile", copilot: "Copilot", agent: "the reviewer", human: "you", custom: "the review check" }[r.tool];
   }
 
   mergerLabel(): string {

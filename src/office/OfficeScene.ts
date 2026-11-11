@@ -255,7 +255,7 @@ export class OfficeScene {
     }
     if (l.gate) {
       const tool = snap.config.workflow.review.tool;
-      const label = { coderabbit: "CodeRabbit", greptile: "Greptile", copilot: "Copilot", human: "Human review", custom: "Review check" }[tool];
+      const label = { coderabbit: "CodeRabbit", greptile: "Greptile", copilot: "Copilot", agent: "Agent review", human: "Human review", custom: "Review check" }[tool];
       live.drawGate(p, l.gate, this.gateMode.mode, t - this.gateMode.at, t, label, tool === "coderabbit");
     }
 

@@ -53,6 +53,8 @@ export interface AgentConfig {
   mcp?: string[];
   /** When the agent starts again, continue its last conversation (default). Off: start a new one. A new sandbox has none to continue. */
   resume?: boolean;
+  /** Reviews pull requests (and takes no tasks) when the review tool is "agent": a model other than the author's reviews each PR. */
+  reviewer?: boolean;
 }
 
 /** An MCP server registered with Docker Sandboxes (`sbx mcp ls`). */
@@ -81,7 +83,7 @@ export interface NewMcpServer {
   apiKey?: string;
 }
 
-export type ReviewTool = "coderabbit" | "greptile" | "copilot" | "human" | "custom";
+export type ReviewTool = "coderabbit" | "greptile" | "copilot" | "agent" | "human" | "custom";
 export type DeployTool = "instacloud" | "vercel" | "custom";
 
 export interface WorkflowConfig {
@@ -441,7 +443,7 @@ export interface WelcomeInput {
 }
 
 export type AgentPatch = Partial<
-  Pick<AgentConfig, "name" | "role" | "cli" | "auth" | "provider" | "model" | "mode" | "color" | "skills" | "roleMd" | "workspacePath" | "resume">
+  Pick<AgentConfig, "name" | "role" | "cli" | "auth" | "provider" | "model" | "mode" | "color" | "skills" | "roleMd" | "workspacePath" | "resume" | "reviewer">
 >;
 
 export interface WorkflowPatch {

@@ -235,6 +235,7 @@ export const reviewToolLabel = {
   coderabbit: "CodeRabbit",
   greptile: "Greptile",
   copilot: "Copilot",
+  agent: "Agent review (another model)",
   human: "Human review",
   custom: "Custom check",
 } as const;

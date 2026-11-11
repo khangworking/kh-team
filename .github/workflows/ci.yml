@@ -40,6 +40,8 @@ jobs:
         run: npx tsx scripts/inbox-test.ts
       - name: Continue the last conversation
         run: npx tsx scripts/resume-test.ts
+      - name: Cross-review
+        run: npx tsx scripts/cross-review-test.ts
       - name: Pack
         shell: bash
         run: mkdir -p pack && npm pack --ignore-scripts --pack-destination pack

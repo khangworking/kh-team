@@ -2,6 +2,7 @@
 // comments → tell the author; passed → tell the lead; merged → task done.
 
 import type { PullRequest } from "../src/data/types";
+import type { CrossReview } from "./crossReview";
 import { branchAgent, fetchPrs, OPEN_LIMIT, RateLimited, taskIdOf, toPullRequest } from "./github";
 import type { Hub } from "./hub";
 import { run } from "./lib/exec";
@@ -29,7 +30,7 @@ const MIN_POLL_MS = 20_000; // never more often than this (nudges included)
 const MAX_POLL_MS = 5 * 60_000;
 const HQ_BUDGET = 1200; // GraphQL points per hour HQ may use; the rest of the 5,000 is left for the agents' gh commands
 const LOW_REMAINING = 800; // below this, poll at most every 2 minutes
-const label = { coderabbit: "CodeRabbit", greptile: "Greptile", copilot: "Copilot", human: "The reviewer", custom: "The review check" } as const;
+const label = { coderabbit: "CodeRabbit", greptile: "Greptile", copilot: "Copilot", agent: "The reviewer", human: "The reviewer", custom: "The review check" } as const;
 
 export class GitHubSync {
   private prev = new Map<number, PullRequest>();
@@ -45,7 +46,7 @@ export class GitHubSync {
   private wip = new Set<number>();
   private wipLabelReady = false;
 
-  constructor(private hub: Hub, private planner: Planner, private repo: string | null) {}
+  constructor(private hub: Hub, private planner: Planner, private repo: string | null, private cross?: CrossReview) {}
 
   start() {
     if (!this.repo) {
@@ -64,6 +65,8 @@ export class GitHubSync {
         this.first = true;
         this.nudge(500);
       }
+      // The team changed (a reviewer was added or switched on): PRs waiting for a reviewer may have one now.
+      if (e.type === "config.updated" && this.hub.snap.config.workflow.review.tool === "agent") this.nudge(1500);
       if (e.type === "activity" && e.event.type === "agent.answered") this.nudge();
       if (e.type === "task.updated" && e.task.status === "in-review") this.nudge(1500);
     });
@@ -116,12 +119,16 @@ export class GitHubSync {
         const task = taskId ? this.planner.task(taskId) : undefined;
         const fromBranch = branchAgent(gh.headRefName);
         const authorId = task?.ownerId ?? (fromBranch && team.has(fromBranch) ? fromBranch : "");
-        return toPullRequest(gh, wf.review.tool, wf.review.enabled, task?.id ?? taskId ?? "", authorId);
+        // An agent of another model reviews each PR that is ready; HQ asks it, once per commit.
+        const sha = gh.commits.nodes[0]?.commit.oid;
+        const agent = wf.review.enabled && wf.review.tool === "agent" && gh.state === "OPEN" && !gh.isDraft && sha ? this.cross?.sync({ number: gh.number, title: gh.title, sha, authorId }) : undefined;
+        return toPullRequest(gh, wf.review.tool, wf.review.enabled, task?.id ?? taskId ?? "", authorId, agent);
       });
       // PRs we showed as open that are now neither open nor recently merged were closed. A full page of
       // open PRs may have left older ones out, so then only the recently-closed list proves it.
       const seen = new Set(next.map((p) => p.number));
       const complete = open.length < OPEN_LIMIT;
+      if (complete) this.cross?.prune(new Set(open.map((p) => p.number)));
       const recentlyClosed = new Set(closed);
       for (const old of this.prev.values())
         if (!seen.has(old.number) && !old.merged && !old.closed) next.push(complete || recentlyClosed.has(old.number) ? { ...old, closed: true } : old);
@@ -194,7 +201,8 @@ export class GitHubSync {
   private react(old: PullRequest | undefined, pr: PullRequest) {
     const hub = this.hub;
     const who = pr.authorId || null;
-    const tool = label[hub.snap.config.workflow.review.tool];
+    const toolId = hub.snap.config.workflow.review.tool;
+    const tool = toolId === "agent" ? (this.cross?.reviewerName(pr.number) ?? label.agent) : label[toolId];
     const lead = hub.snap.config.team.find((a) => a.isLead);
     const ref = `#${pr.number} ${pr.title}`;
 
@@ -216,7 +224,14 @@ export class GitHubSync {
     if (newComments) {
       const n = pr.openComments;
       hub.activity("review.changes", who, `${tool} left ${n || "new"} comment${n === 1 ? "" : "s"} on #${pr.number}`);
-      if (who)
+      const findings = toolId === "agent" ? this.cross?.findings(pr.number) : "";
+      if (who && findings)
+        this.planner.notify(
+          who,
+          `${tool} reviewed your PR #${pr.number} (${pr.title}) and asked for changes: ${findings} ` +
+            `The full review is on the PR (\`gh pr view ${pr.number} --comments\`). Fix it on the same branch and push; HQ then asks ${tool} to review the new commit.`,
+        );
+      else if (who)
         this.planner.notify(
           who,
           `${tool} reviewed your PR #${pr.number} (${pr.title}) and left ${n || "new"} open comment${n === 1 ? "" : "s"}. ` +

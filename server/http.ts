@@ -16,6 +16,7 @@ import type { RateLimits } from "./rateLimits";
 import { handleHook } from "./hooks";
 import type { Hub } from "./hub";
 import type { Inbox } from "./inbox";
+import type { CrossReview } from "./crossReview";
 import { handleMcp } from "./mcp";
 import type { Planner } from "./planner";
 import { log } from "./lib/log";
@@ -52,6 +53,7 @@ interface Options {
   budget: Budget;
   limits: RateLimits;
   credit: OutOfCredit;
+  cross?: CrossReview;
   port: number;
   browserToken: string;
   agentToken: string;
@@ -93,7 +95,7 @@ export function startHttp(o: Options) {
       if (req.method === "GET" || req.method === "DELETE") return send(res, 405, "stateless server");
       try {
         const raw = await readBody(req, 1024 * 1024);
-        return await handleMcp(o.hub, o.planner, agentId, req, res, raw ? JSON.parse(raw) : undefined);
+        return await handleMcp(o.hub, o.planner, agentId, req, res, raw ? JSON.parse(raw) : undefined, o.cross);
       } catch {
         return res.headersSent ? void res.end() : send(res, 400, "bad request");
       }

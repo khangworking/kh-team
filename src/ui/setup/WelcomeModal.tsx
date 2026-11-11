@@ -116,7 +116,7 @@ export function WelcomeModal() {
                 Review PRs before merge
               </label>
               <select className="field w-[220px]" value={reviewTool} disabled={!reviewEnabled} onChange={(e) => setReviewTool(e.target.value as ReviewTool)} aria-label="Review tool">
-                {(Object.keys(reviewToolLabel) as ReviewTool[]).map((t) => (
+                {(Object.keys(reviewToolLabel) as ReviewTool[]).filter((t) => t !== "agent").map((t) => (
                   <option key={t} value={t}>
                     {reviewToolLabel[t]}
                   </option>
