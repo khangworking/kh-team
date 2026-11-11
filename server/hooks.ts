@@ -95,6 +95,11 @@ export function handleHook(
     if (typeof body.cost === "number") budget?.record(agentId, body.cost);
     return { ok: true };
   }
+  if (event === "Usage") {
+    // Codex: the usage windows from its session file, sent after each turn.
+    if (body.rate_limits) limits?.observe(agentId, body.rate_limits);
+    return { ok: true };
+  }
   if (event === "StatusLine") {
     const total = typeof body.cost === "object" ? body.cost?.total_cost_usd : undefined;
     if (typeof total === "number") budget?.recordTotal(agentId, String(body.session_id ?? ""), total);

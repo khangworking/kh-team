@@ -12,8 +12,22 @@ import { join } from "node:path";
 const home = mkdtempSync(join(tmpdir(), "hq-limits-"));
 Object.assign(process.env, { HOME: home, USERPROFILE: home });
 
-const { RateLimits, parseCodexLimit } = await import("../server/rateLimits");
+const { RateLimits, parseCodexLimit, readWindows } = await import("../server/rateLimits");
 const { handleHook } = await import("../server/hooks");
+
+// ---- The windows, in the shape each CLI reports them
+{
+  const claude = readWindows({ five_hour: { used_percentage: 23.5, resets_at: 1738425600 }, seven_day: { used_percentage: 41.2, resets_at: 1738857600 } });
+  assert.equal(claude.fiveHour?.usedPct, 23.5);
+  assert.equal(claude.sevenDay?.resetsAt, new Date(1738857600 * 1000).toISOString());
+  // Codex's session file: primary is the 5-hour window (300 minutes), secondary the week (10080).
+  const codex = readWindows({ primary: { used_percent: 91.5, window_minutes: 300, resets_at: 1794241692 }, secondary: { used_percent: 60, window_minutes: 10080, resets_at: 1794382923 } });
+  assert.equal(codex.fiveHour?.usedPct, 91.5);
+  assert.equal(codex.sevenDay?.usedPct, 60);
+  // A plan with only a weekly window reports it as primary.
+  assert.deepEqual(Object.keys(readWindows({ primary: { used_percent: 10, window_minutes: 10080, resets_at: 1794382923 } })), ["sevenDay"]);
+  assert.deepEqual(readWindows({ primary: { used_percent: "x" } }), {});
+}
 
 // ---- Codex's message
 {
@@ -141,6 +155,41 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   assert.ok(t.sent.some((s) => s[0] === "a2" && /Continue T2/.test(s[1])));
   assert.equal(t.sent.filter((s) => s[0] === "a3").length, 0, "a3 had no task");
   t.limits.stop();
+}
+
+// ---- Codex agents wind down the same way, from the windows Codex's session file reports (posted by a Stop hook).
+{
+  const t = make("codexdown");
+  const w = (pct: number) => ({ primary: { used_percent: pct, window_minutes: 300, resets_at: inOneHour }, secondary: { used_percent: 20, window_minutes: 10080, resets_at: inOneHour + 604800 } });
+  t.limits.observe("x", w(88));
+  assert.ok(!t.statuses.get("x")!.limitedUntil, "88% is a warning only");
+  t.limits.observe("x", w(92));
+  assert.equal(t.statuses.get("x")!.limitPhase, "paused", "x holds no task here, so it pauses at once");
+  assert.ok(!t.statuses.get("a")!.limitedUntil, "the Claude subscription is another account");
+  t.limits.observe("x", w(100));
+  assert.equal(t.statuses.get("x")!.limitPhase, "blocked");
+  t.limits.stop();
+  // The hook route: a usage report is not agent activity.
+  const t2 = make("codexhook");
+  const noActivity = { noteHook: () => assert.fail("a usage report is not agent activity") };
+  assert.deepEqual(handleHook(t2.hub as never, noActivity as never, "x", "Usage", { rate_limits: w(93) }, undefined, t2.limits), { ok: true });
+  assert.equal(t2.statuses.get("x")!.limitPhase, "paused");
+  t2.limits.stop();
+}
+
+// ---- Codex's config has the usage hook for a subscription agent, and not for an API-key agent.
+{
+  const { codexConfig, codexUsageCommand } = await import("../server/adapters");
+  const { newAgent } = await import("../server/store");
+  const agent = newAgent("dai", "Dai", "Dev", "#fff", false);
+  Object.assign(agent, { cli: "codex", auth: "subscription", provider: "openai", mode: "sandbox" });
+  const cfg = { project: { hqPort: 7420 }, team: [agent], workflow: { merge: { by: "human" }, review: { enabled: true, tool: "human", command: "" }, deploy: { enabled: false } } };
+  const sub = codexConfig(agent, cfg as never, "tok", "/x");
+  assert.ok(sub.includes("/hook/dai/Usage") && sub.includes("rate_limits"));
+  assert.equal(sub.match(/\[\[hooks\.Stop\.hooks\]\]/g)?.length, 2, "HQ's Stop hook and the usage hook");
+  const key = codexConfig({ ...agent, auth: "apiKey", provider: "openai" }, cfg as never, "tok", "/x");
+  assert.ok(!key.includes("/Usage"));
+  assert.match(codexUsageCommand("http://h:1", "tok", "dai"), /transcript_path/);
 }
 
 // ---- Usage drops below 90% before the reset (credits added): released early. The limit itself arriving ends the winding down.

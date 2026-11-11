@@ -10,8 +10,8 @@
 //
 // Before a window runs out (90% used, 10% left) HQ winds down: each agent saves its work (commit, a draft
 // pull request marked "đang làm" with the WIP label, notes on the task, a message to the lead) and then
-// pauses until the reset, when it is asked to continue until the work is done. Only Claude Code reports
-// percentages, so only Claude agents wind down; Codex is handled when it hits its limit.
+// pauses until the reset, when it is asked to continue until the work is done. Claude Code reports the
+// percentages in its status line; Codex writes them to its session file, which a hook reads after each turn.
 //
 // Agents that use an API key are not covered here (their errors are not a window; the daily budget covers money).
 
@@ -46,6 +46,30 @@ type Phase = NonNullable<AgentStatus["limitPhase"]>;
 const isAccount = (v: unknown): v is LimitAccount => v === "anthropic" || v === "openai";
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const future = (iso: string | null | undefined): iso is string => !!iso && Date.parse(iso) > Date.now();
+
+interface RawWindow {
+  used_percentage?: unknown; // Claude Code
+  used_percent?: unknown; // Codex
+  resets_at?: unknown; // Unix seconds
+  window_minutes?: unknown; // Codex
+}
+
+/**
+ * The usage windows from what a CLI reports. Claude Code: five_hour / seven_day. Codex: primary / secondary, each with
+ * its length in minutes (300 = the 5-hour window, 10080 = the week). A window that is gone has reset.
+ */
+export function readWindows(raw: unknown): AccountLimit["windows"] {
+  const r = raw as Record<string, RawWindow | undefined>;
+  const out: AccountLimit["windows"] = {};
+  const put = (name: "fiveHour" | "sevenDay", w: RawWindow | undefined) => {
+    const pct = w?.used_percentage ?? w?.used_percent;
+    if (w && num(pct) && num(w.resets_at)) out[name] = { usedPct: pct, resetsAt: new Date(w.resets_at * 1000).toISOString() };
+  };
+  put("fiveHour", r.five_hour);
+  put("sevenDay", r.seven_day);
+  for (const w of [r.primary, r.secondary]) if (w) put(num(w.window_minutes) && w.window_minutes > 1440 ? "sevenDay" : "fiveHour", w);
+  return out;
+}
 
 /** What an agent is told when its usage is nearly used up: save the work in the way the team can pick it up later. */
 export function wrapUpText(task: Task | undefined, label: string, pct: number, until: string): string {
@@ -153,15 +177,9 @@ export class RateLimits {
   /** Claude Code's status line: the account's usage windows. A full window blocks the account until it resets; 90% winds it down. */
   observe(agentId: string, raw: unknown) {
     const account = this.accountOf(agentId);
-    const limits = raw as { five_hour?: { used_percentage?: unknown; resets_at?: unknown }; seven_day?: { used_percentage?: unknown; resets_at?: unknown } } | undefined;
-    if (!account || !limits || typeof limits !== "object") return;
+    if (!account || !raw || typeof raw !== "object") return;
     const s = this.get(account);
-    const next: AccountLimit["windows"] = {};
-    for (const [key, name] of [["five_hour", "fiveHour"], ["seven_day", "sevenDay"]] as const) {
-      const w = limits[key];
-      // resets_at is Unix seconds. A window that is gone has reset.
-      if (w && num(w.used_percentage) && num(w.resets_at)) next[name] = { usedPct: w.used_percentage, resetsAt: new Date(w.resets_at * 1000).toISOString() };
-    }
+    const next = readWindows(raw);
     s.windows = next;
     // No window at all says nothing about whether the limit is over.
     if (!Object.keys(next).length) return this.publish();
