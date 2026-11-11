@@ -114,6 +114,16 @@ const make = () => {
   assert.match(t.pushed[t.pushed.length - 1][1], /assigned you T1/);
   assert.ok(task.note!.includes("branch p1f-t07-theme"), "the new owner reads the summary in the task");
 
+  // Nor can the lead hand it over by message (that is assigning it): other messages go through.
+  const t3 = make();
+  await t3.credit.handle("dwight", "Insufficient Balance");
+  assert.throws(() => t3.planner.message("michael", "jim", "Please take T1, the theme task."), /T1 is on hold.*only the user/);
+  assert.throws(() => t3.planner.message("michael", "jim", "start t1 now"), /on hold/, "any case");
+  t3.planner.message("michael", "jim", "How is T10 going?"); // another task whose id merely starts the same way
+  t3.planner.message("jim", "michael", "T1 is on hold, right?"); // a worker may talk about it
+  t3.planner.message("michael", "jim", "Please look at the README.");
+  assert.equal(t3.pushed.filter((p) => p[0] === "jim").length, 2, "the two allowed messages to jim");
+
   // A new session of the agent (the user added credit and restarted it) clears the flag.
   t.credit.clear("dwight");
   assert.equal(t.statuses.get("dwight")!.outOfCredit, null);
@@ -157,6 +167,17 @@ const make = () => {
   assert.equal(seen.length, 2);
   hook("dwight", "SessionStart", {});
   assert.equal(seen[2], "clear:dwight");
+}
+
+// ---- The lead's role file says it too (the workers' does not need to).
+{
+  const { roleMd } = await import("../server/agentFiles");
+  const { newAgent } = await import("../server/store");
+  const lead = Object.assign(newAgent("michael", "Michael", "Lead", "#fff", true), { cli: "claude" });
+  const worker = newAgent("dwight", "Dwight", "Dev", "#fff", false);
+  const cfg = { project: { hqPort: 7420 }, team: [lead, worker], workflow: { merge: { by: "human" }, review: { enabled: true, tool: "human", command: "" }, deploy: { enabled: false } } };
+  assert.match(roleMd(lead, cfg as never), /with a hold.*Never assign it.*never recreate it.*Only the user assigns it again/);
+  assert.ok(!/with a hold/.test(roleMd(worker, cfg as never)));
 }
 
 console.log("✓ out of credit");

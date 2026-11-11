@@ -166,6 +166,11 @@ export class Planner {
     if (!toId) throw new Error(`No agent "${toRef}". Team: ${this.snap.config.team.map((a) => a.id).join(", ")}`);
     const clean = text.trim().slice(0, 2000);
     if (!clean) throw new Error("Empty message");
+    // The lead can't hand a held task over by message either: that is the same as assigning it.
+    if (this.hub.cfg(fromId)?.isLead) {
+      const held = this.snap.tasks.find((t) => t.hold && new RegExp(`(^|[^A-Za-z0-9-])${t.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9-])`, "i").test(clean));
+      if (held) throw new Error(`${held.id} is on hold (${held.hold}). Don't ask anyone to work on it: only the user decides when it is assigned again. Tell the user in your reply instead.`);
+    }
     this.record(fromId, toId, clean);
     this.hub.activity("message", fromId === "you" ? null : fromId, `${this.hub.name(fromId)} → ${this.hub.name(toId)}: ${clean.slice(0, 80)}`);
     this.inbox.push(toId, { fromId, kind: "message", text: clean });
