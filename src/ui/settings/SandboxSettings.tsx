@@ -105,6 +105,27 @@ export function SandboxSettingsTab({ initialAgentId }: { initialAgentId?: string
       <ResourcesSection agent={agent} status={status} team={snap.config.team} machine={snap.setup.machine} />
 
       <section className="border-[3px] border-ink bg-white p-3">
+        <SectionTitle>Sandbox</SectionTitle>
+        <div className="flex items-center gap-3">
+          <p className="m-0 flex-1 text-[13px] text-muted">
+            Removes {agent.name}'s sandbox and starts a fresh one. Use it when a change doesn't take effect in the running sandbox (a new key or credential, an installed tool gone wrong, a
+            new CLI). {agent.name}'s folder and code are kept; anything installed inside the VM and the CLI's conversation are lost, and {agent.name} restarts.
+          </p>
+          <button
+            className="btn shrink-0 text-[13px]"
+            disabled={!live || !sandboxExists || status?.session.state === "starting"}
+            title={!sandboxExists ? `${agent.name} has no sandbox yet. It is created on first Start.` : undefined}
+            onClick={() =>
+              window.confirm(`Recreate ${agent.name}'s sandbox?\n\nThe agent's folder and code are kept. Anything installed inside the VM and the CLI's conversation are lost, and ${agent.name} restarts.`) &&
+              officeActions.recreateSandbox(agent.id)
+            }
+          >
+            Recreate sandbox
+          </button>
+        </div>
+      </section>
+
+      <section className="border-[3px] border-ink bg-white p-3">
         <div className="flex items-center justify-between">
           <SectionTitle>Network for {agent.name}'s sandbox</SectionTitle>
           <button className="btn mb-2 px-2 text-[12px]" onClick={copyToAll} title="Copy these allowed and blocked domains to every agent">

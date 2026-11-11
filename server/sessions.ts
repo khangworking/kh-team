@@ -282,7 +282,7 @@ export class Sessions {
     }
     this.onSandboxRemoved(id);
     this.hub.setSession(id, { state: "stopped", detail: null });
-    this.hub.activity("session", id, `Recreating ${agent.name}'s sandbox with new resources`);
+    this.hub.activity("session", id, `Recreating ${agent.name}'s sandbox`);
     await this.start(id);
   }
 
