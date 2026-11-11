@@ -10,7 +10,7 @@ import { hasHqSkills, prepareSkills } from "./skills";
 import { resolve, sep } from "node:path";
 import { CLI_LABEL, HOST_TERMINAL, type AgentCli, type SetupCheckId, type WorkspaceInfo } from "../src/data/types";
 import { PROVIDER_INFO } from "../src/data/providers";
-import { adapters, localBinary } from "./adapters";
+import { adapters, localBinary, shouldResume } from "./adapters";
 import type { Hub } from "./hub";
 import type { RateLimits } from "./rateLimits";
 import { sessionBackend, type LaunchSpec, type TermHandle } from "./backends";
@@ -123,8 +123,12 @@ export class Sessions {
         const skills = await prepareSkills(hub.slug, dir, specs);
         if (skills.error) hub.activity("session", id, `${agent.name}: some agent skills didn't install (${skills.error.slice(0, 120)}). Starting anyway.`);
       }
+      let resumed = false; // continuing the agent's last conversation
       if (!(await this.backend.exists(name))) {
-        const launch = adapter.launch(agent, hub.snap.config, dir);
+        // An earlier conversation lives in the agent's sandbox: continue it. A new sandbox (or one rebuilt for another CLI) has none.
+        const resume = shouldResume(agent, await this.sandboxAgent(name));
+        resumed = resume;
+        const launch = adapter.launch(agent, hub.snap.config, dir, { resume });
         const envFile = this.envFileFor(id);
         const providerEnv = this.providerEnvFor(id);
         // App variables, then the provider key (API-key agents). Local mode: sourced by tmux; Sandbox: --env-file.
@@ -169,7 +173,7 @@ export class Sessions {
       this.attach(id);
       hub.setSession(id, { state: "running", detail: null, workspace: dir });
       hub.setStatus(id, { state: "idle", note: agent.mode === "sandbox" ? "Sandbox running" : "Running locally" });
-      hub.activity("session", id, `${agent.name} started (${CLI_LABEL[agent.cli]}, ${agent.mode === "sandbox" ? "Docker Sandbox" : "Local mode"})`);
+      hub.activity("session", id, `${agent.name} started (${CLI_LABEL[agent.cli]}, ${agent.mode === "sandbox" ? "Docker Sandbox" : "Local mode"}${resumed ? ", continuing its last conversation" : ""})`);
       if (agent.mode === "sandbox") {
         setTimeout(() => void this.refreshSandboxSizes(), 4000);
         void this.whenSandboxExists(id).then((ok) => ok && this.onSandboxReady(id));

@@ -51,6 +51,8 @@ export interface AgentConfig {
   workspacePath: string | null; // an existing folder to use; null = HQ-managed clone
   /** MCP servers (names in sbx's registry) this agent's sandbox gets. */
   mcp?: string[];
+  /** When the agent starts again, continue its last conversation (default). Off: start a new one. A new sandbox has none to continue. */
+  resume?: boolean;
 }
 
 /** An MCP server registered with Docker Sandboxes (`sbx mcp ls`). */
@@ -439,7 +441,7 @@ export interface WelcomeInput {
 }
 
 export type AgentPatch = Partial<
-  Pick<AgentConfig, "name" | "role" | "cli" | "auth" | "provider" | "model" | "mode" | "color" | "skills" | "roleMd" | "workspacePath">
+  Pick<AgentConfig, "name" | "role" | "cli" | "auth" | "provider" | "model" | "mode" | "color" | "skills" | "roleMd" | "workspacePath" | "resume">
 >;
 
 export interface WorkflowPatch {

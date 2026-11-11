@@ -126,7 +126,7 @@ export class Planner {
     const by = byId === "you" ? "The user (your human)" : this.hub.name(byId);
     const text = `${by} assigned you ${task.id} (${task.title}). Pull main, start ${task.id}. Call the hq get_my_task tool for the details.`;
     this.record(byId, agentId, `Start ${task.id}: ${task.title}`);
-    this.inbox.push(agentId, { fromId: byId, kind: "assign", text });
+    this.inbox.push(agentId, { fromId: byId, kind: "assign", text, taskId: task.id });
     return task;
   }
 

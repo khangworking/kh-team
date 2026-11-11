@@ -23,9 +23,18 @@ export interface Launch {
 export interface CliAdapter {
   /** Writes HQ's files into the agent's folder (all git-excluded). */
   writeFiles(dir: string, agent: AgentConfig, cfg: HqConfig, token: string, extras?: RoleExtras): Promise<void>;
-  launch(agent: AgentConfig, cfg: HqConfig, dir: string): Launch;
+  /** `resume`: the agent has an earlier conversation in its sandbox and should continue it. */
+  launch(agent: AgentConfig, cfg: HqConfig, dir: string, opts?: { resume?: boolean }): Launch;
   /** False when the CLI can't run in Docker Sandboxes (yet). */
   sandbox: boolean;
+}
+
+/**
+ * Whether an agent that starts continues its last conversation. The conversation lives in the agent's sandbox, so
+ * only an existing sandbox made for this CLI has one: a new sandbox, or one rebuilt for another CLI, starts fresh.
+ */
+export function shouldResume(agent: Pick<AgentConfig, "mode" | "resume" | "cli">, sandboxAgent: string | null): boolean {
+  return agent.mode === "sandbox" && agent.resume !== false && sandboxAgent === agent.cli;
 }
 
 // ---------------------------------------------------------------- Claude Code
@@ -36,7 +45,7 @@ const claude: CliAdapter = {
     const ownRole = await adoptRoleFile(dir);
     writeClaudeFiles(dir, agent, cfg, token, { ...extras, ownRole });
   },
-  launch(agent) {
+  launch(agent, _cfg, _dir, opts) {
     // "Opus" / "Sonnet" / "Haiku" → Claude Code's aliases; anything else is passed as a full model id.
     const m = agent.model.trim();
     // On DeepSeek/OpenRouter the model comes from ANTHROPIC_MODEL (providerKeys.ts).
@@ -45,7 +54,7 @@ const claude: CliAdapter = {
     // Windows the folder has a different path inside the sandbox (C:\x on the host, /c/x in the sandbox).
     return {
       sbxAgent: "claude",
-      args: ["--mcp-config", MCP_CONFIG, ...(model ? ["--model", model] : [])],
+      args: ["--mcp-config", MCP_CONFIG, ...(opts?.resume ? ["--continue"] : []), ...(model ? ["--model", model] : [])],
       // HQ started from a Claude Code terminal passes this on, and Claude Code then refuses to start ("nested session").
       unset: ["CLAUDECODE"],
     };
@@ -110,9 +119,10 @@ const codex: CliAdapter = {
     if (hookScriptFor(agent, dir)) writeHookScript(dir);
     excludeFromGit(dir, [CODEX_CONFIG, HOOK_SCRIPT]);
   },
-  launch(agent) {
+  launch(agent, _cfg, _dir, opts) {
     const model = agent.model.trim() && !/^default$/i.test(agent.model.trim()) ? agent.model.trim() : null;
-    return { sbxAgent: "codex", args: model ? ["-m", model] : [] };
+    // `codex resume --last` continues the latest session of this folder; with none it starts a new one.
+    return { sbxAgent: "codex", args: [...(opts?.resume ? ["resume", "--last"] : []), ...(model ? ["-m", model] : [])] };
   },
 };
 
@@ -155,9 +165,9 @@ const opencode: CliAdapter = {
     agentWrite(dir, `${OPENCODE_PLUGIN}/index.ts`, opencodePluginSource({ hqUrl: hqUrl(agent, cfg.project.hqPort), token, agentId: agent.id }), { mode: 0o600 });
     excludeFromGit(dir, [ROLE_FILE, OPENCODE_CONFIG, `${OPENCODE_PLUGIN}/`]);
   },
-  launch() {
+  launch(_agent, _cfg, _dir, opts) {
     // The sandbox is the boundary, so OpenCode approves its own tool calls.
-    return { sbxAgent: "opencode", args: ["--auto"] };
+    return { sbxAgent: "opencode", args: ["--auto", ...(opts?.resume ? ["--continue"] : [])] };
   },
 };
 
