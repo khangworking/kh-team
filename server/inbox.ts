@@ -93,7 +93,8 @@ export class Inbox {
       this.sessionUp.has(agentId) &&
       st.session.state === "running" &&
       st.state === "idle" &&
-      !(st.limitedUntil && Date.parse(st.limitedUntil) > Date.now()) && // a usage limit wait: typing would cut Claude Code's wait short
+      // A usage limit wait: typing would cut Claude Code's wait short. An agent saving its work before the limit still gets messages.
+      !(st.limitedUntil && Date.parse(st.limitedUntil) > Date.now() && st.limitPhase !== "winding-down") &&
       !this.typing.has(agentId) &&
       Date.now() - (this.lastHook.get(agentId) ?? 0) >= QUIET_MS
     );

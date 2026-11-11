@@ -143,6 +143,11 @@ export interface AgentStatus {
   note: string | null; // e.g. "Asking: max PDF size 10 MB or 20 MB?"
   /** The agent's subscription hit its usage limit: when it can work again (ISO). Messages are held until then. */
   limitedUntil?: string | null;
+  /**
+   * winding-down: usage is nearly used up and the agent is saving its work (commit, draft PR, notes).
+   * paused: its work is saved and HQ holds it until the reset. blocked: the limit is reached.
+   */
+  limitPhase?: "winding-down" | "paused" | "blocked" | null;
   session: SessionInfo;
 }
 
@@ -160,6 +165,8 @@ export interface AccountLimit {
   windows: { fiveHour?: LimitWindow; sevenDay?: LimitWindow };
   /** Set while the subscription can't be used: when it works again (ISO). */
   blockedUntil: string | null;
+  /** Set while usage is nearly used up (90%) and agents save their work and pause: the reset they wait for (ISO). */
+  windDownUntil: string | null;
   /** The CLI didn't say when: HQ looks again later. */
   guessed: boolean;
 }
@@ -206,6 +213,7 @@ export interface PullRequest {
   closed?: boolean; // closed without merging — hidden from the board
   conflict?: boolean; // has merge conflicts with the base branch
   reviewNote?: string | null; // e.g. "CodeRabbit: review rate limited"
+  draft?: boolean; // work in progress: not reviewed, and its task stays in progress
 }
 
 export type EnvironmentStatus = "live" | "deploying" | "sleeping";

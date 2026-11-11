@@ -85,7 +85,7 @@ export function handleHook(
   event: string,
   body: HookPayload,
   budget?: Pick<Budget, "record" | "recordTotal">,
-  limits?: Pick<RateLimits, "observe" | "hit" | "resumed">,
+  limits?: Pick<RateLimits, "observe" | "hit" | "resumed" | "turnEnded">,
 ): HookResult {
   const st = hub.status(agentId);
   const name = hub.name(agentId);
@@ -162,6 +162,7 @@ export function handleHook(
       turnOpen.set(agentId, false);
       hub.setStatus(agentId, { state: "idle", note: "Finished — ready for the next instruction" });
       hub.activity("agent.answered", agentId, `${name} finished a turn`);
+      limits?.turnEnded(agentId, inbox.pending(agentId)); // an agent saving its work before a usage limit is now done
       break;
     }
     case "Idle":

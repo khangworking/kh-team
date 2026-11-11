@@ -100,20 +100,23 @@ export function TopBar() {
       {live &&
         (snap.rateLimits ?? []).map((l) => {
           const blocked = l.blockedUntil && Date.parse(l.blockedUntil) > Date.now();
+          const pausing = !blocked && l.windDownUntil && Date.parse(l.windDownUntil) > Date.now();
           const top = Object.entries(l.windows).sort((a, b) => b[1].usedPct - a[1].usedPct)[0];
-          if (!blocked && !(top && top[1].usedPct >= LIMIT_WARN_AT)) return null;
+          if (!blocked && !pausing && !(top && top[1].usedPct >= LIMIT_WARN_AT)) return null;
           const name = top?.[0] === "sevenDay" ? "weekly" : "5h";
           return (
             <span
               key={l.account}
               className={`chip whitespace-nowrap text-[13px] ${blocked ? "bg-red text-white" : "bg-yellow"}`}
               title={
-                blocked
+                pausing
+                  ? `${ACCOUNT_LABEL[l.account]} usage is nearly used up. Agents save their work (commit, draft PR marked WIP, notes) and pause until the window resets, then continue.`
+                  : blocked
                   ? `${ACCOUNT_LABEL[l.account]} usage limit reached. HQ waits for the reset${l.guessed ? " (the time is a guess; HQ looks again then)" : ""}, holds messages for these agents and tells the lead not to assign them work.`
                   : `${ACCOUNT_LABEL[l.account]}: the ${name} usage window is ${Math.round(top![1].usedPct)}% used. It resets ${formatReset(top![1].resetsAt)}.`
               }
             >
-              {ACCOUNT_LABEL[l.account]} · {blocked ? `limit, back ${formatReset(l.blockedUntil!)}` : `${name} ${Math.round(top![1].usedPct)}%`}
+              {ACCOUNT_LABEL[l.account]} · {blocked ? `limit, back ${formatReset(l.blockedUntil!)}` : pausing ? `pausing, back ${formatReset(l.windDownUntil!)}` : `${name} ${Math.round(top![1].usedPct)}%`}
             </span>
           );
         })}

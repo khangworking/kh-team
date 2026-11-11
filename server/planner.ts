@@ -130,7 +130,7 @@ export class Planner {
     const task = this.currentTask(agentId);
     if (!task) throw new Error("You have no task. Ask the lead for one.");
     task.status = status;
-    task.note = note?.slice(0, 300) || null;
+    task.note = note?.slice(0, 1000) || null;
     if (prNumber) task.prNumber = prNumber;
     if (status === "done") this.hub.setStatus(agentId, { currentTaskId: null });
     else this.hub.setStatus(agentId, { currentTaskId: task.id });

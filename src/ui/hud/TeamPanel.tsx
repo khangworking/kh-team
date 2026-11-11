@@ -38,8 +38,18 @@ function AgentCard({ a, focused, n, now }: { a: AgentView; focused: boolean; n: 
         <span className="font-term text-[16px] text-muted">{ago(a.status.stateSince, now)}</span>
         {a.config.mode === "local" && <span className="chip text-[11px]">local</span>}
         {a.status.limitedUntil && Date.parse(a.status.limitedUntil) > now && (
-          <span className="chip text-[11px]" style={{ background: "#ffd0dc" }} title="This subscription hit its usage limit. HQ holds messages and waits for the reset.">
-            limit · back {formatReset(a.status.limitedUntil, now)}
+          <span
+            className="chip text-[11px]"
+            style={{ background: a.status.limitPhase === "blocked" ? "#ffd0dc" : "#ffec27" }}
+            title={
+              a.status.limitPhase === "winding-down"
+                ? "Usage is nearly used up. This agent is saving its work (commit, draft PR, notes) before it pauses."
+                : a.status.limitPhase === "paused"
+                  ? "Usage is nearly used up and the work is saved. HQ holds this agent until the reset, then asks it to continue."
+                  : "This subscription hit its usage limit. HQ holds messages and waits for the reset."
+            }
+          >
+            {a.status.limitPhase === "winding-down" ? "saving work" : a.status.limitPhase === "paused" ? "paused" : "limit"} · back {formatReset(a.status.limitedUntil, now)}
           </span>
         )}
         {items > 0 && (
