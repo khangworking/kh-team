@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { managedWorkspace } from "../server/paths";
 import { detectRepo } from "../server/repo";
 import { newAgent } from "../server/store";
-import { ensureWorkspace } from "../server/workspace";
+import { agentRemoteUrl, ensureWorkspace } from "../server/workspace";
 import type { AgentConfig } from "../src/data/types";
 
 const tmp = mkdtempSync(join(tmpdir(), "hq-workspace-"));
@@ -54,6 +54,22 @@ const SLUG = "test";
 const agent = (id: string, patch: Partial<AgentConfig> = {}): AgentConfig => ({ ...newAgent(id, id, "Developer", "#ffffff", false), ...patch });
 
 const tests: [string, () => Promise<void>][] = [
+  [
+    "a GitHub SSH remote becomes HTTPS in the agent's clone (a sandbox has no SSH key)",
+    async () => {
+      for (const ssh of ["git@github.com:khangworking/kh-todo.git", "git@github.com:khangworking/kh-todo", "ssh://git@github.com/khangworking/kh-todo.git"])
+        same(ssh, agentRemoteUrl(ssh), "https://github.com/khangworking/kh-todo.git");
+      same("https stays", agentRemoteUrl("https://github.com/a/b.git"), "https://github.com/a/b.git");
+      same("another host stays", agentRemoteUrl("git@gitlab.com:a/b.git"), "git@gitlab.com:a/b.git");
+      same("a local path stays", agentRemoteUrl("/srv/git/b.git"), "/srv/git/b.git");
+      const dir = await ensureWorkspace(agent("sshorigin"), SLUG, { ...repo, originUrl: "git@github.com:khangworking/kh-todo.git" });
+      same("origin in the clone", sandbox(dir, "config", "--get", "remote.origin.url"), "https://github.com/khangworking/kh-todo.git\n");
+      // A clone made earlier with the SSH one is corrected the next time the agent starts.
+      sandbox(dir, "remote", "set-url", "origin", "git@github.com:khangworking/kh-todo.git");
+      await ensureWorkspace(agent("sshorigin"), SLUG, { ...repo, originUrl: "git@github.com:khangworking/kh-todo.git" });
+      same("origin after a Start", sandbox(dir, "config", "--get", "remote.origin.url"), "https://github.com/khangworking/kh-todo.git\n");
+    },
+  ],
   [
     "new clone on a CRLF host: clean in the sandbox, LF on disk",
     async () => {
