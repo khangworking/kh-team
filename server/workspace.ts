@@ -20,6 +20,16 @@ async function hostConvertsToCrlf(projectSlug: string): Promise<boolean> {
 }
 
 /**
+ * The origin an agent's clone uses. A sandbox has no SSH key and its network does not let SSH out, but it reaches
+ * GitHub over HTTPS with the token sbx injects. So a GitHub SSH remote becomes the HTTPS one (the host keeps its own);
+ * other hosts keep theirs.
+ */
+export function agentRemoteUrl(url: string): string {
+  const m = url.trim().match(/^(?:ssh:\/\/)?git@github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i);
+  return m ? `https://github.com/${m[1]}.git` : url.trim();
+}
+
+/**
  * Makes sure the agent's folder exists and is a git repo.
  * A full clone (not a worktree): inside a sandbox a worktree loses git access.
  */
@@ -41,6 +51,6 @@ export async function ensureWorkspace(agent: AgentConfig, projectSlug: string, r
     await run("git", ["config", "core.autocrlf", "input"], { cwd: dir });
   }
   // A local clone points origin at the folder; agents need the real remote to push.
-  if (repo.originUrl) await run("git", ["remote", "set-url", "origin", repo.originUrl], { cwd: dir });
+  if (repo.originUrl) await run("git", ["remote", "set-url", "origin", agentRemoteUrl(repo.originUrl)], { cwd: dir });
   return dir;
 }
