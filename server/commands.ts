@@ -125,6 +125,7 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
       // Model names don't carry over between providers either.
       if (auth.provider !== agent.provider && typeof p.model !== "string") agent.model = "";
       Object.assign(agent, auth);
+      if (typeof p.resume === "boolean") agent.resume = p.resume;
       if (Array.isArray(p.skills)) agent.skills = p.skills.map((s) => str(s, 60)).filter(Boolean);
       if (p.workspacePath !== undefined) agent.workspacePath = p.workspacePath ? str(p.workspacePath, 500).trim() || null : null;
       hub.configChanged();

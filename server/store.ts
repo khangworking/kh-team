@@ -55,6 +55,7 @@ export function newAgent(id: string, name: string, role: string, color: string, 
     sandbox: defaultSandbox(),
     workspacePath: null,
     mcp: [],
+    resume: true,
   };
 }
 
@@ -80,6 +81,7 @@ export function loadConfig(repo: RepoInfo, port: number): { config: HqConfig; is
     for (const a of found.team) {
       a.workspacePath ??= null;
       a.mcp ??= [];
+      a.resume ??= true;
       a.cli ??= "claude";
       if ((a.cli as string) === "pi") a.cli = "opencode"; // Pi was tried in P0, then OpenCode came back
       a.mode = "sandbox"; // every agent runs in its own Docker Sandbox

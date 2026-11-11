@@ -5,7 +5,7 @@ import { CLI_LABEL, type AgentAuth, type AgentCli, type AgentConfig, type AgentM
 import { officeActions, useOffice } from "../../store/office";
 import { agentPalette } from "../../theme/tokens";
 import { Field, Portrait, SectionTitle } from "../kit";
-import { CommitInput } from "./controls";
+import { CommitInput, Toggle } from "./controls";
 import { RemoveAgentDialog } from "./RemoveAgentDialog";
 
 export function CliSelect({ value, onChange }: { value: AgentCli; onChange: (v: AgentCli) => void }) {
@@ -162,6 +162,12 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
               list={agent.auth === "apiKey" ? `models-${agent.provider}` : agent.cli === "codex" ? "codex-models" : "claude-models"}
               onCommit={(v) => set({ model: v.trim() })}
             />
+          </Field>
+          <Field
+            label="Continue last conversation"
+            hint="When this agent starts again (Stop then Start, or HQ restarts it), it picks up its last conversation in its sandbox, so it remembers what it was doing. Off: it starts a new one. A new or recreated sandbox has no conversation to continue."
+          >
+            <Toggle checked={agent.resume !== false} onChange={(v) => set({ resume: v })} label={agent.resume !== false ? "On" : "Off"} />
           </Field>
           <Field label="Skills" hint="Comma separated. Copied into the agent's .claude/skills.">
             <CommitInput

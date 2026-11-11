@@ -131,6 +131,7 @@ async function main() {
     log.info(sessions.backend.persistent ? "stopping HQ — agent sessions keep running in tmux" : "stopping HQ and its agents — sandboxes and folders are kept");
     sessions.shutdown();
     budget.flush();
+    inbox.flush();
     limits.stop();
     sbx.stopApprovalPolling();
     github.stop();
