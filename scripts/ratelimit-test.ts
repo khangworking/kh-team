@@ -1,5 +1,6 @@
-// Subscription usage limits: reading Claude Code's windows and Codex's screen, blocking the whole account,
-// telling the lead, holding work, and nudging agents that did not continue after the reset.
+// Subscription usage limits, one agent = one account: reading Claude Code's windows and Codex's windows and
+// screen, the 90% wind-down (save work, draft PR, pause), blocking at the limit, telling the lead, holding work,
+// and nudging agents that did not continue after the reset.
 //
 //   npx tsx scripts/ratelimit-test.ts
 
@@ -45,14 +46,15 @@ const { handleHook } = await import("../server/hooks");
   assert.equal(parseCodexLimit("Ask Codex to do anything", now), null);
 }
 
-type Agent = { id: string; isLead: boolean; auth: "subscription" | "apiKey"; provider: string };
+// Every agent is on its own subscription, apart from `key`, which uses an API key and has no usage windows.
+type Agent = { id: string; isLead: boolean; cli: "claude" | "codex"; auth: "subscription" | "apiKey" };
 const team: Agent[] = [
-  { id: "lead", isLead: true, auth: "subscription", provider: "openai" }, // Codex lead
-  { id: "a", isLead: false, auth: "subscription", provider: "anthropic" },
-  { id: "a2", isLead: false, auth: "subscription", provider: "anthropic" },
-  { id: "a3", isLead: false, auth: "subscription", provider: "anthropic" }, // no task
-  { id: "x", isLead: false, auth: "subscription", provider: "openai" },
-  { id: "key", isLead: false, auth: "apiKey", provider: "anthropic" },
+  { id: "lead", isLead: true, cli: "codex", auth: "subscription" },
+  { id: "a", isLead: false, cli: "claude", auth: "subscription" },
+  { id: "a2", isLead: false, cli: "claude", auth: "subscription" },
+  { id: "a3", isLead: false, cli: "claude", auth: "subscription" }, // no task
+  { id: "x", isLead: false, cli: "codex", auth: "subscription" },
+  { id: "key", isLead: false, cli: "claude", auth: "apiKey" },
 ];
 type Status = { state: string; note: string | null; limitedUntil?: string | null; limitPhase?: string | null; session: { state: string } };
 const make = (slug: string) => {
@@ -78,59 +80,77 @@ const make = (slug: string) => {
 };
 const inOneHour = Math.floor(Date.now() / 1000) + 3600;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const claudeWin = (pct: number, resets = inOneHour) => ({ five_hour: { used_percentage: pct, resets_at: resets } });
+const codexWin = (pct: number) => ({ primary: { used_percent: pct, window_minutes: 300, resets_at: inOneHour }, secondary: { used_percent: 20, window_minutes: 10080, resets_at: inOneHour + 604800 } });
+const toLead = (t: ReturnType<typeof make>) => t.sent.filter((s) => s[0] === "lead").map((s) => s[1]);
 
 // ---- A window at 85% warns once; it blocks nobody.
 {
   const t = make("warn");
-  const w = { five_hour: { used_percentage: 85, resets_at: inOneHour } };
-  t.limits.observe("a", w);
-  t.limits.observe("a", w);
+  t.limits.observe("a", claudeWin(85));
+  t.limits.observe("a", claudeWin(85));
   assert.equal(t.activity.filter((a) => /85%/.test(a)).length, 1);
   assert.equal(t.limits.blockedUntil("a"), null);
-  t.limits.observe("key", w); // an API-key agent has no subscription
+  t.limits.observe("key", claudeWin(85)); // an API-key agent has no subscription
   assert.equal(t.activity.length, 1);
   t.limits.stop();
 }
 
-// ---- A full window blocks the whole account (not the other one), and the lead is told.
+// ---- Each agent is its own account: a full window blocks only the agent that reports it.
 {
   const t = make("block");
-  t.limits.observe("a", { five_hour: { used_percentage: 100, resets_at: inOneHour }, seven_day: { used_percentage: 40, resets_at: inOneHour + 86400 } });
-  for (const id of ["a", "a2"]) {
-    assert.ok(t.statuses.get(id)!.limitedUntil, `${id} is limited`);
-    assert.equal(Date.parse(t.statuses.get(id)!.limitedUntil!) / 1000, inOneHour);
-  }
-  assert.ok(!t.statuses.get("x")!.limitedUntil, "the Codex subscription is another account");
-  assert.ok(!t.statuses.get("key")!.limitedUntil, "an API-key agent is not covered");
-  assert.ok(!t.statuses.get("lead")!.limitedUntil);
-  assert.deepEqual(t.sent.map((s) => s[0]), ["lead"]);
-  assert.match(t.sent[0][1], /a, a2, a3 can't work until/);
-  t.limits.observe("a2", { five_hour: { used_percentage: 100, resets_at: inOneHour } }); // repeated: no second notice
+  t.limits.observe("a", { ...claudeWin(100), seven_day: { used_percentage: 40, resets_at: inOneHour + 86400 } });
+  assert.equal(t.statuses.get("a")!.limitPhase, "blocked");
+  assert.equal(Date.parse(t.statuses.get("a")!.limitedUntil!) / 1000, inOneHour);
+  for (const id of ["a2", "a3", "x", "key", "lead"]) assert.ok(!t.statuses.get(id)!.limitedUntil, `${id} has its own account`);
+  assert.equal(toLead(t).length, 1);
+  assert.match(toLead(t)[0], /a reached its Claude Code usage limit/);
+  t.limits.observe("a", claudeWin(100)); // repeated: no second notice
   t.limits.hit("a", null); // StopFailure for a limit already known
-  assert.equal(t.sent.length, 1);
-  assert.ok(t.limits.blockedUntil("a2"));
+  assert.equal(toLead(t).length, 1);
+  // a2 reports plenty left: it keeps working.
+  t.limits.observe("a2", claudeWin(30, inOneHour + 7200));
+  assert.ok(!t.statuses.get("a2")!.limitedUntil);
   t.limits.stop();
 }
 
-// ---- 90% used: agents save their work (commit, draft PR "Đang làm", WIP label, notes, lead told) and pause until the reset.
+// ---- StopFailure(rate_limit): that agent waits; an API-key agent has an error to fix.
+{
+  const t = make("stopfailure");
+  const inbox = { noteHook: () => {} };
+  handleHook(t.hub as never, inbox as never, "a", "StopFailure", { error: "rate_limit" }, undefined, t.limits);
+  assert.equal(t.statuses.get("a")!.state, "idle");
+  assert.equal(t.statuses.get("a")!.limitPhase, "blocked", "blocked, with a guessed time to look again");
+  assert.ok(!t.statuses.get("a2")!.limitedUntil, "another agent's account is not affected");
+  handleHook(t.hub as never, inbox as never, "key", "StopFailure", { error: "rate_limit" }, undefined, t.limits);
+  assert.equal(t.statuses.get("key")!.state, "needs-input");
+  // Claude Code's own wait notices are not "needs you".
+  handleHook(t.hub as never, inbox as never, "a2", "Notification", { notification_type: "quota_auto_resume_disabled", message: "stopped" }, undefined, t.limits);
+  assert.equal(t.statuses.get("a2")!.state, "idle");
+  t.limits.stop();
+}
+
+// ---- 90% used: the agent saves its work (commit, draft PR "Đang làm", WIP label, notes, lead told) and pauses until the reset.
 {
   const t = make("winddown");
-  t.statuses.get("a2")!.state = "working"; // mid-turn
-  const w = (pct: number) => ({ five_hour: { used_percentage: pct, resets_at: inOneHour } });
-  t.limits.observe("a", w(92));
-  // a and a2 hold tasks: asked to save, still able to receive messages. a3 has nothing to save: paused at once.
-  for (const id of ["a", "a2"]) assert.equal(t.statuses.get(id)!.limitPhase, "winding-down", `${id} is saving its work`);
-  assert.equal(t.statuses.get("a3")!.limitPhase, "paused");
-  assert.ok(!t.statuses.get("x")!.limitedUntil, "the other subscription is not affected");
+  t.statuses.get("a2")!.state = "working"; // mid-turn, with its own account at 40%
+  t.limits.observe("a2", claudeWin(40));
+  t.limits.observe("a", claudeWin(92));
+  assert.equal(t.statuses.get("a")!.limitPhase, "winding-down", "a is saving its work");
+  assert.ok(!t.statuses.get("a2")!.limitedUntil, "a2 has its own account and keeps working");
   const toA = t.sent.filter((s) => s[0] === "a").map((s) => s[1]);
   assert.equal(toA.length, 1);
   for (const must of ["92%", "[T1] WIP", "git push", "DRAFT", "Đang làm (WIP)", "--label WIP", "gh label create WIP", "set_my_status", "send_message", "in-review"]) assert.ok(toA[0].includes(must), `the wrap-up message has "${must}"`);
-  assert.equal(t.sent.filter((s) => s[0] === "a3").length, 0, "no wrap-up for an agent without a task");
-  assert.equal(t.sent.filter((s) => s[0] === "lead").length, 1, "the lead is told once");
-  assert.match(t.sent.find((s) => s[0] === "lead")![1], /saving their work/);
-  t.limits.observe("a2", w(93)); // repeated: nothing new
+  assert.equal(toLead(t).length, 1, "the lead is told once");
+  assert.match(toLead(t)[0], /a's Claude Code usage is at 92%.*saving its work/);
+  t.limits.observe("a", claudeWin(93)); // repeated: nothing new
   assert.equal(t.sent.filter((s) => s[0] === "a").length, 1);
-  assert.equal(t.sent.filter((s) => s[0] === "lead").length, 1);
+  assert.equal(toLead(t).length, 1);
+
+  // An agent with no task has nothing to save: it pauses at once, with no wrap-up message.
+  t.limits.observe("a3", claudeWin(91));
+  assert.equal(t.statuses.get("a3")!.limitPhase, "paused");
+  assert.equal(t.sent.filter((s) => s[0] === "a3").length, 0);
 
   // The wrap-up is done when the agent's turn ends with nothing queued (a queued message continues the turn).
   const inbox = { noteHook: () => {}, takeForStop: () => null, pending: () => 0 };
@@ -139,40 +159,63 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   handleHook(t.hub as never, inbox as never, "a", "Stop", {}, undefined, t.limits);
   assert.equal(t.statuses.get("a")!.limitPhase, "paused");
   assert.match(t.statuses.get("a")!.note!, /Work saved/);
-  assert.ok(t.sent.some((s) => s[0] === "lead" && /saved its work and is paused/.test(s[1])));
-  assert.equal(t.statuses.get("a2")!.limitPhase, "winding-down", "a2 is still saving");
+  assert.ok(toLead(t).some((s) => /a saved its work and is paused/.test(s)));
 
-  // After the reset: everyone is released, and an idle agent with a task is told to continue with its notes and draft PR.
+  // After the reset the agent is released, and an idle agent with a task is told to continue with its notes and draft PR.
   t.tasks[0].prNumber = 12;
   t.tasks[0].note = "Done: schema. Next: routes.";
-  t.statuses.get("a2")!.state = "idle";
   t.sent.length = 0;
   t.limits.tick(Date.now() + 3601 * 1000);
-  for (const id of ["a", "a2", "a3"]) assert.ok(!t.statuses.get(id)!.limitedUntil && !t.statuses.get(id)!.limitPhase, `${id} is released`);
+  for (const id of ["a", "a3"]) assert.ok(!t.statuses.get(id)!.limitedUntil && !t.statuses.get(id)!.limitPhase, `${id} is released`);
   await sleep(120);
   const resume = t.sent.find((s) => s[0] === "a" && /Continue T1/.test(s[1]))?.[1] ?? "";
   for (const must of ["Done: schema. Next: routes.", "draft PR is #12", "gh pr ready 12", "--remove-label WIP", "in-review"]) assert.ok(resume.includes(must), `the resume message has "${must}"`);
-  assert.ok(t.sent.some((s) => s[0] === "a2" && /Continue T2/.test(s[1])));
   assert.equal(t.sent.filter((s) => s[0] === "a3").length, 0, "a3 had no task");
+  assert.equal(t.sent.filter((s) => s[0] === "a2").length, 0, "a2 was never paused");
+  assert.ok(toLead(t).some((s) => /a's Claude Code usage limit has reset/.test(s)));
+  t.limits.stop();
+}
+
+// ---- Two agents that happen to share an account report the same numbers, and each winds down on its own.
+{
+  const t = make("shared");
+  t.limits.observe("a", claudeWin(95));
+  t.limits.observe("a2", claudeWin(95));
+  assert.equal(t.statuses.get("a")!.limitPhase, "winding-down");
+  assert.equal(t.statuses.get("a2")!.limitPhase, "winding-down");
+  t.limits.stop();
+}
+
+// ---- Usage drops below 90% before the reset (credits added): released early. The limit arriving ends the winding down.
+{
+  const t = make("early");
+  t.limits.observe("a", claudeWin(91));
+  assert.equal(t.statuses.get("a")!.limitPhase, "winding-down");
+  t.limits.observe("a", claudeWin(30));
+  assert.ok(!t.statuses.get("a")!.limitedUntil);
+  t.limits.observe("a", claudeWin(95));
+  assert.equal(t.statuses.get("a")!.limitPhase, "winding-down");
+  t.limits.observe("a", claudeWin(100));
+  assert.equal(t.statuses.get("a")!.limitPhase, "blocked", "the limit is here: nothing left to save with");
   t.limits.stop();
 }
 
 // ---- Codex agents wind down the same way, from the windows Codex's session file reports (posted by a Stop hook).
 {
   const t = make("codexdown");
-  const w = (pct: number) => ({ primary: { used_percent: pct, window_minutes: 300, resets_at: inOneHour }, secondary: { used_percent: 20, window_minutes: 10080, resets_at: inOneHour + 604800 } });
-  t.limits.observe("x", w(88));
+  t.limits.observe("x", codexWin(88));
   assert.ok(!t.statuses.get("x")!.limitedUntil, "88% is a warning only");
-  t.limits.observe("x", w(92));
+  t.limits.observe("x", codexWin(92));
   assert.equal(t.statuses.get("x")!.limitPhase, "paused", "x holds no task here, so it pauses at once");
-  assert.ok(!t.statuses.get("a")!.limitedUntil, "the Claude subscription is another account");
-  t.limits.observe("x", w(100));
+  assert.ok(!t.statuses.get("lead")!.limitedUntil, "the Codex lead has its own account");
+  assert.ok(!t.statuses.get("a")!.limitedUntil, "so does the Claude agent");
+  t.limits.observe("x", codexWin(100));
   assert.equal(t.statuses.get("x")!.limitPhase, "blocked");
   t.limits.stop();
   // The hook route: a usage report is not agent activity.
   const t2 = make("codexhook");
   const noActivity = { noteHook: () => assert.fail("a usage report is not agent activity") };
-  assert.deepEqual(handleHook(t2.hub as never, noActivity as never, "x", "Usage", { rate_limits: w(93) }, undefined, t2.limits), { ok: true });
+  assert.deepEqual(handleHook(t2.hub as never, noActivity as never, "x", "Usage", { rate_limits: codexWin(93) }, undefined, t2.limits), { ok: true });
   assert.equal(t2.statuses.get("x")!.limitPhase, "paused");
   t2.limits.stop();
 }
@@ -192,56 +235,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   assert.match(codexUsageCommand("http://h:1", "tok", "dai"), /transcript_path/);
 }
 
-// ---- Usage drops below 90% before the reset (credits added): released early. The limit itself arriving ends the winding down.
-{
-  const t = make("early");
-  const w = (pct: number) => ({ five_hour: { used_percentage: pct, resets_at: inOneHour } });
-  t.limits.observe("a", w(91));
-  assert.equal(t.statuses.get("a")!.limitPhase, "winding-down");
-  t.limits.observe("a", w(30));
-  assert.ok(!t.statuses.get("a")!.limitedUntil);
-  t.limits.observe("a", w(95));
-  assert.equal(t.statuses.get("a")!.limitPhase, "winding-down");
-  t.limits.observe("a", w(100));
-  assert.equal(t.statuses.get("a")!.limitPhase, "blocked", "the limit is here: nothing left to save with");
-  t.limits.stop();
-}
-
-// ---- StopFailure(rate_limit): a subscription agent waits; an API-key agent has an error to fix.
-{
-  const t = make("stopfailure");
-  const inbox = { noteHook: () => {} };
-  handleHook(t.hub as never, inbox as never, "a", "StopFailure", { error: "rate_limit" }, undefined, t.limits);
-  assert.equal(t.statuses.get("a")!.state, "idle");
-  assert.ok(t.statuses.get("a")!.limitedUntil, "blocked, with a guessed time to look again");
-  assert.ok(t.statuses.get("a2")!.limitedUntil, "the whole account");
-  handleHook(t.hub as never, inbox as never, "key", "StopFailure", { error: "rate_limit" }, undefined, t.limits);
-  assert.equal(t.statuses.get("key")!.state, "needs-input");
-  // Claude Code's own wait notices are not "needs you".
-  handleHook(t.hub as never, inbox as never, "a2", "Notification", { notification_type: "quota_auto_resume_disabled", message: "stopped" }, undefined, t.limits);
-  assert.equal(t.statuses.get("a2")!.state, "idle");
-  t.limits.stop();
-}
-
-// ---- The reset: the wait ends, the lead is told, and only an idle agent with a task is nudged.
-{
-  const t = make("reset");
-  t.limits.observe("a", { five_hour: { used_percentage: 100, resets_at: inOneHour } });
-  t.sent.length = 0;
-  t.limits.tick(Date.now() + 1000); // not yet
-  assert.ok(t.limits.blockedUntil("a"));
-  t.statuses.get("a2")!.state = "working"; // a2 continued by itself
-  t.limits.tick(Date.now() + 3601 * 1000);
-  assert.equal(t.limits.blockedUntil("a"), null);
-  assert.ok(!t.statuses.get("a")!.limitedUntil);
-  assert.match(t.sent.find((s) => s[0] === "lead")![1], /has reset/);
-  await sleep(120);
-  const nudged = t.sent.filter((s) => /Continue/.test(s[1])).map((s) => s[0]);
-  assert.deepEqual(nudged, ["a"], "a is idle with a task; a2 is already working");
-  t.limits.stop();
-}
-
-// ---- Codex's screen: handled once, not slid later at every look.
+// ---- Codex's screen: handled once per agent, not slid later at every look.
 {
   const t = make("codex");
   const screen = "■ You've hit your usage limit. Try again in 3 hours.";
@@ -251,26 +245,23 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   await sleep(20);
   t.limits.codexScreen("x", screen);
   assert.equal(t.statuses.get("x")!.limitedUntil, first);
-  assert.deepEqual(t.sent.map((s) => s[0]), [], "the lead is Codex too, on the same account");
+  assert.equal(toLead(t).length, 1, "the lead is told once");
+  assert.ok(!t.statuses.get("lead")!.limitedUntil, "another Codex agent is another account");
   t.limits.stop();
 }
 
-// ---- A restart during a wait keeps the wait.
+// ---- A restart during a wait keeps the wait (and an agent that was saving its work comes back paused).
 {
   const first = make("restart");
-  first.limits.observe("a", { five_hour: { used_percentage: 100, resets_at: inOneHour } });
+  first.limits.observe("a", claudeWin(100));
+  first.limits.observe("a2", claudeWin(93));
   first.limits.stop();
   const second = make("restart");
   assert.ok(second.limits.blockedUntil("a"));
-  assert.ok(second.statuses.get("a2")!.limitedUntil);
+  assert.equal(second.statuses.get("a")!.limitPhase, "blocked");
+  assert.equal(second.statuses.get("a2")!.limitPhase, "paused");
+  assert.ok(!second.statuses.get("a3")!.limitedUntil);
   second.limits.stop();
-  // ...also one that was winding down: the agents come back paused.
-  const wd = make("restart-winddown");
-  wd.limits.observe("a", { five_hour: { used_percentage: 93, resets_at: inOneHour } });
-  wd.limits.stop();
-  const wd2 = make("restart-winddown");
-  assert.equal(wd2.statuses.get("a")!.limitPhase, "paused");
-  wd2.limits.stop();
 }
 
 // ---- A draft PR is work in progress: not reviewed, and its task stays in progress.
