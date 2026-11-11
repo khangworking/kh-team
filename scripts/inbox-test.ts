@@ -41,7 +41,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   a.inbox.push("dwight", { fromId: "you", kind: "message", text: "Please add tests." });
   a.inbox.flush();
   assert.equal(a.saved().queues.dwight.length, 1);
-  assert.equal(statSync(a.file).mode & 0o777, 0o600, "owner only");
+  // Windows has no POSIX permission bits (it reports 0o666 whatever is asked), so the mode is only checked elsewhere.
+  if (process.platform !== "win32") assert.equal(statSync(a.file).mode & 0o777, 0o600, "owner only");
   assert.equal(a.typed.length, 0, "the agent is busy");
   a.inbox.stop();
 
