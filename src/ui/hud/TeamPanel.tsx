@@ -38,6 +38,11 @@ function AgentCard({ a, focused, n, now }: { a: AgentView; focused: boolean; n: 
         <StateChip state={a.status.state} />
         <span className="font-term text-[16px] text-muted">{ago(a.status.stateSince, now)}</span>
         {a.config.mode === "local" && <span className="chip text-[11px]">local</span>}
+        {a.status.outOfCredit && (
+          <span className="chip text-[11px]" style={{ background: "#ffd0dc" }} title={`${a.status.outOfCredit}. Add credit (or change the key), then restart ${a.config.name}.`}>
+            no credit
+          </span>
+        )}
         {!(a.status.limitedUntil && Date.parse(a.status.limitedUntil) > now) && usageTop && usageTop[1].usedPct >= LIMIT_WARN_AT && (
           <span className="chip text-[11px]" style={{ background: "#fff1d6" }} title={`${usageTop[0] === "sevenDay" ? "Weekly" : "5-hour"} usage window. It resets ${formatReset(usageTop[1].resetsAt, now)}.`}>
             {usageTop[0] === "sevenDay" ? "week" : "5h"} {Math.round(usageTop[1].usedPct)}%

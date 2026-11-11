@@ -34,6 +34,8 @@ jobs:
         run: npx tsx scripts/budget-test.ts
       - name: Subscription usage limits
         run: npx tsx scripts/ratelimit-test.ts
+      - name: Agent out of credit
+        run: npx tsx scripts/credit-test.ts
       - name: Pack
         shell: bash
         run: mkdir -p pack && npm pack --ignore-scripts --pack-destination pack

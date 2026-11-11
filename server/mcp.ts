@@ -49,7 +49,8 @@ function buildServer(hub: Hub, planner: Planner, me: string): McpServer {
             running: st?.session.state === "running", state: st?.state, task: st?.currentTaskId ?? null,
             // A subscription at its usage limit can't work until then: don't assign it anything.
             limitedUntil: st?.limitedUntil && Date.parse(st.limitedUntil) > Date.now() ? st.limitedUntil : null,
-            free: st?.session.state === "running" && !a.isLead && !planner.currentTask(a.id) && !(st?.limitedUntil && Date.parse(st.limitedUntil) > Date.now()),
+            outOfCredit: st?.outOfCredit ?? null,
+            free: st?.session.state === "running" && !a.isLead && !planner.currentTask(a.id) && !st?.outOfCredit && !(st?.limitedUntil && Date.parse(st.limitedUntil) > Date.now()),
           };
         }),
       ),
@@ -84,7 +85,7 @@ function buildServer(hub: Hub, planner: Planner, me: string): McpServer {
     guard(({ boardId, status, owner }: { boardId?: string; status?: string; owner?: string }) => {
       const ownerId = owner ? planner.agentId(owner) : undefined;
       const list = hub.snap.tasks.filter((t) => (!boardId || t.boardId === boardId) && (!status || t.status === status) && (!owner || t.ownerId === ownerId));
-      return ok(list.map((t) => ({ id: t.id, board: t.boardId, title: t.title, status: t.status, owner: t.ownerId ? hub.name(t.ownerId) : null, needs: t.needs })));
+      return ok(list.map((t) => ({ id: t.id, board: t.boardId, title: t.title, status: t.status, owner: t.ownerId ? hub.name(t.ownerId) : null, needs: t.needs, hold: t.hold ?? null })));
     }),
   );
 

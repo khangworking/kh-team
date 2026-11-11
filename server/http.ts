@@ -11,6 +11,7 @@ import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { OfficeEvent } from "../src/data/source";
 import type { Budget } from "./budget";
+import type { OutOfCredit } from "./outOfCredit";
 import type { RateLimits } from "./rateLimits";
 import { handleHook } from "./hooks";
 import type { Hub } from "./hub";
@@ -50,6 +51,7 @@ interface Options {
   planner: Planner;
   budget: Budget;
   limits: RateLimits;
+  credit: OutOfCredit;
   port: number;
   browserToken: string;
   agentToken: string;
@@ -73,7 +75,7 @@ export function startHttp(o: Options) {
       const [, , agentId, event] = url.pathname.split("/");
       try {
         const body = await readBody(req);
-        const r = handleHook(o.hub, o.inbox, decodeURIComponent(agentId ?? ""), event ?? "", body ? JSON.parse(body) : {}, o.budget, o.limits);
+        const r = handleHook(o.hub, o.inbox, decodeURIComponent(agentId ?? ""), event ?? "", body ? JSON.parse(body) : {}, o.budget, o.limits, o.credit);
         if (!r.ok) return send(res, 404, "");
         if (r.response) return send(res, 200, JSON.stringify(r.response), "application/json");
         res.writeHead(204);

@@ -113,6 +113,7 @@ export function roleMd(agent: AgentConfig, cfg: HqConfig, extras: RoleExtras = {
           ? "You merge PRs once they pass review (`gh pr merge <number> --squash --delete-branch`), one at a time, in an order that avoids conflicts. HQ tells you when each one passes."
           : "The user merges PRs; never merge one yourself. Decide the order they should land in, and tell the user if one blocks another.",
         "If the user changes who merges, HQ tells you. Follow the latest message.",
+        "A task with a hold (list_tasks shows it) was put back in todo by HQ, for example because its agent ran out of credit; its note says what was done. Never assign it, never ask anyone to work on it, and never recreate it as a new task. Only the user assigns it again: wait for their instruction.",
       ]
     : [
         "Work only on the task you were given. One task = one branch = one PR.",
