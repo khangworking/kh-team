@@ -60,6 +60,20 @@ const CODEX_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "Permiss
 /** TOML basic string (JSON's escaping is valid TOML for these characters). */
 const t = (s: string) => JSON.stringify(s);
 
+/**
+ * Codex writes its usage windows (5-hour and weekly, as percentages) into its session file, which every hook
+ * is told the path of. After each turn this reads the latest ones and posts them to HQ (the usage-limit wind-down).
+ * Runs in the agent's sandbox, which has sh, jq and curl.
+ */
+export function codexUsageCommand(url: string, token: string, agentId: string): string {
+  const post = `curl -sf -m 4 -X POST -H 'Authorization: Bearer ${token}' -H 'Content-Type: application/json' --data "{\\"rate_limits\\":$rl}" '${url}/hook/${agentId}/Usage'`;
+  return (
+    `f=$(jq -r '.transcript_path // empty' 2>/dev/null); ` +
+    `if [ -n "$f" ] && [ -f "$f" ]; then rl=$(grep '"rate_limits":{' "$f" | tail -1 | jq -c '(.payload.rate_limits // .rate_limits) // empty' 2>/dev/null); ` +
+    `[ -n "$rl" ] && ${post} >/dev/null 2>&1; fi; true`
+  );
+}
+
 export function codexConfig(agent: AgentConfig, cfg: HqConfig, token: string, dir: string, extras: RoleExtras = {}): string {
   const url = hqUrl(agent, cfg.project.hqPort);
   const script = hookScriptFor(agent, dir);
@@ -76,8 +90,11 @@ export function codexConfig(agent: AgentConfig, cfg: HqConfig, token: string, di
     `url = ${t(`${url}/mcp`)}`,
     `http_headers = { Authorization = ${t(`Bearer ${token}`)}, "X-HQ-Agent" = ${t(agent.id)} }`,
   ];
-  for (const event of CODEX_EVENTS)
+  for (const event of CODEX_EVENTS) {
     lines.push("", `[[hooks.${event}]]`, `[[hooks.${event}.hooks]]`, 'type = "command"', `command = ${t(hookCommand(url, token, agent.id, event, script))}`);
+    // A ChatGPT subscription has usage windows; an API key has none. (A Local-mode Windows agent has no sh, jq or curl.)
+    if (event === "Stop" && agent.auth === "subscription" && !script) lines.push(`[[hooks.${event}.hooks]]`, 'type = "command"', `command = ${t(codexUsageCommand(url, token, agent.id))}`);
+  }
   return lines.join("\n") + "\n";
 }
 

@@ -1,3 +1,4 @@
+import { formatReset, LIMIT_WARN_AT } from "../../data/limits";
 import { PROVIDER_INFO } from "../../data/providers";
 import { CLI_LABEL } from "../../data/types";
 import { selectTeam, useOffice, type AgentView } from "../../store/office";
@@ -9,6 +10,7 @@ function AgentCard({ a, focused, n, now }: { a: AgentView; focused: boolean; n: 
   const snap = useOffice((s) => s.snap);
   const task = a.status.currentTaskId ? snap?.tasks.find((t) => t.id === a.status.currentTaskId) : null;
   const st = stateStyle[a.status.state];
+  const usageTop = Object.entries(snap?.rateLimits?.find((l) => l.agentId === a.config.id)?.windows ?? {}).sort((x, y) => y[1].usedPct - x[1].usedPct)[0];
   const needs = a.status.state === "needs-input";
   const blocked = useOffice((s) => s.snap?.sbx.agents[a.config.id]?.approvals?.length ?? 0);
   const items = useOffice((s) => (s.snap?.actionItems ?? []).filter((i) => i.status === "open" && i.fromId === a.config.id).length);
@@ -36,6 +38,26 @@ function AgentCard({ a, focused, n, now }: { a: AgentView; focused: boolean; n: 
         <StateChip state={a.status.state} />
         <span className="font-term text-[16px] text-muted">{ago(a.status.stateSince, now)}</span>
         {a.config.mode === "local" && <span className="chip text-[11px]">local</span>}
+        {!(a.status.limitedUntil && Date.parse(a.status.limitedUntil) > now) && usageTop && usageTop[1].usedPct >= LIMIT_WARN_AT && (
+          <span className="chip text-[11px]" style={{ background: "#fff1d6" }} title={`${usageTop[0] === "sevenDay" ? "Weekly" : "5-hour"} usage window. It resets ${formatReset(usageTop[1].resetsAt, now)}.`}>
+            {usageTop[0] === "sevenDay" ? "week" : "5h"} {Math.round(usageTop[1].usedPct)}%
+          </span>
+        )}
+        {a.status.limitedUntil && Date.parse(a.status.limitedUntil) > now && (
+          <span
+            className="chip text-[11px]"
+            style={{ background: a.status.limitPhase === "blocked" ? "#ffd0dc" : "#ffec27" }}
+            title={
+              a.status.limitPhase === "winding-down"
+                ? "Usage is nearly used up. This agent is saving its work (commit, draft PR, notes) before it pauses."
+                : a.status.limitPhase === "paused"
+                  ? "Usage is nearly used up and the work is saved. HQ holds this agent until the reset, then asks it to continue."
+                  : "This subscription hit its usage limit. HQ holds messages and waits for the reset."
+            }
+          >
+            {a.status.limitPhase === "winding-down" ? "saving work" : a.status.limitPhase === "paused" ? "paused" : "limit"} · back {formatReset(a.status.limitedUntil, now)}
+          </span>
+        )}
         {items > 0 && (
           <span className="chip text-[11px]" style={{ background: "#ffec27" }} title="Action items from this agent. Open Action items in the top bar.">
             {items} for you

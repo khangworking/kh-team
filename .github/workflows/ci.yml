@@ -32,6 +32,8 @@ jobs:
         run: npx tsx scripts/nudge-test.ts
       - name: Daily budget
         run: npx tsx scripts/budget-test.ts
+      - name: Subscription usage limits
+        run: npx tsx scripts/ratelimit-test.ts
       - name: Pack
         shell: bash
         run: mkdir -p pack && npm pack --ignore-scripts --pack-destination pack

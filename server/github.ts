@@ -177,7 +177,8 @@ export function branchAgent(branch: string): string | null {
 
 export function toPullRequest(pr: GhPr, tool: ReviewTool, reviewEnabled: boolean, taskId: string, authorId: string): PullRequest {
   const merged = pr.state === "MERGED";
-  const r = reviewEnabled ? reviewOf(pr, tool) : { review: "passed" as ReviewState, openComments: 0, note: null };
+  // A draft is work in progress (an agent saving its work before a usage limit): not reviewed, never "passed".
+  const r = pr.isDraft ? { review: "pending" as ReviewState, openComments: 0, note: "Draft: work in progress" } : reviewEnabled ? reviewOf(pr, tool) : { review: "passed" as ReviewState, openComments: 0, note: null };
   return {
     number: pr.number,
     title: pr.title,
@@ -192,6 +193,7 @@ export function toPullRequest(pr: GhPr, tool: ReviewTool, reviewEnabled: boolean
     branch: pr.headRefName,
     closed: pr.state === "CLOSED",
     conflict: pr.mergeable === "CONFLICTING",
-    reviewNote: pr.isDraft ? "Draft" : r.note,
+    reviewNote: r.note,
+    draft: pr.isDraft,
   };
 }

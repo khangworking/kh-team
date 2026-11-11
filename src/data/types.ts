@@ -141,7 +141,35 @@ export interface AgentStatus {
   currentTaskId: string | null;
   stateSince: string; // ISO time
   note: string | null; // e.g. "Asking: max PDF size 10 MB or 20 MB?"
+  /** The agent's subscription hit its usage limit: when it can work again (ISO). Messages are held until then. */
+  limitedUntil?: string | null;
+  /**
+   * winding-down: usage is nearly used up and the agent is saving its work (commit, draft PR, notes).
+   * paused: its work is saved and HQ holds it until the reset. blocked: the limit is reached.
+   */
+  limitPhase?: "winding-down" | "paused" | "blocked" | null;
   session: SessionInfo;
+}
+
+export interface LimitWindow {
+  usedPct: number; // 0-100
+  resetsAt: string; // ISO
+}
+
+/**
+ * The usage limits of one agent's subscription. Each agent signs in with its own account, so each is followed on its
+ * own, from the percentages that agent's CLI reports (they are the account's, so agents that share an account agree).
+ */
+export interface AgentLimit {
+  agentId: string;
+  /** The 5-hour and weekly windows, as the CLI reports them. */
+  windows: { fiveHour?: LimitWindow; sevenDay?: LimitWindow };
+  /** Set while the subscription can't be used: when it works again (ISO). */
+  blockedUntil: string | null;
+  /** Set while usage is nearly used up (90%) and the agent saves its work and pauses: the reset it waits for (ISO). */
+  windDownUntil: string | null;
+  /** The CLI didn't say when: HQ looks again later. */
+  guessed: boolean;
 }
 
 export type BoardStatus = "active" | "planned" | "done";
@@ -186,6 +214,7 @@ export interface PullRequest {
   closed?: boolean; // closed without merging — hidden from the board
   conflict?: boolean; // has merge conflicts with the base branch
   reviewNote?: string | null; // e.g. "CodeRabbit: review rate limited"
+  draft?: boolean; // work in progress: not reviewed, and its task stays in progress
 }
 
 export type EnvironmentStatus = "live" | "deploying" | "sleeping";
@@ -355,6 +384,8 @@ export interface OfficeSnapshot {
   providerKeys?: ProviderId[];
   /** Today's spend by agents that use an API key, against the office's daily limit. */
   budget?: BudgetState;
+  /** Usage limits of the subscriptions the team uses. */
+  rateLimits?: AgentLimit[];
 }
 
 export interface BudgetState {

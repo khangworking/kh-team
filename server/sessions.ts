@@ -12,6 +12,7 @@ import { CLI_LABEL, HOST_TERMINAL, type AgentCli, type SetupCheckId, type Worksp
 import { PROVIDER_INFO } from "../src/data/providers";
 import { adapters, localBinary } from "./adapters";
 import type { Hub } from "./hub";
+import type { RateLimits } from "./rateLimits";
 import { sessionBackend, type LaunchSpec, type TermHandle } from "./backends";
 import { resolveCommand } from "./backends/pty";
 import { loadEnvFile } from "./backends/tmux";
@@ -68,6 +69,8 @@ export class Sessions {
   providerEnvFor: (agentId: string) => string | null = () => null;
   /** True when the daily budget is used up and this agent uses an API key. */
   budgetBlocks: (agentId: string) => boolean = () => false;
+  /** Subscription usage limits (Codex shows its limit on screen; HQ reads it there). */
+  rateLimits: RateLimits | null = null;
   /** Called when HQ reattaches to a session that was already running (e.g. after an HQ restart). */
   onSessionReattached: (agentId: string) => void = () => {};
   /** When the agent's last hook arrived (from the inbox). */
@@ -462,6 +465,8 @@ export class Sessions {
     const st = this.hub.status(agentId);
     if (!st) return;
     const screen = await this.backend.screenText(name, 14);
+    // The ChatGPT usage limit: Codex says so on screen (and when it ends). A message still there after a reset is old.
+    this.rateLimits?.codexScreen(agentId, screen);
     const TRUST_NOTE = "Asking: approve Codex's folder and hook prompts in the terminal (choose Yes, then Trust all)";
     if (/Do you trust the contents of this directory|Hooks need review/i.test(screen)) {
       if (st.note !== TRUST_NOTE) {

@@ -4,6 +4,7 @@
 import type { PullRequest } from "../src/data/types";
 import { branchAgent, fetchPrs, OPEN_LIMIT, RateLimited, taskIdOf, toPullRequest } from "./github";
 import type { Hub } from "./hub";
+import { run } from "./lib/exec";
 import { log } from "./lib/log";
 import type { Planner } from "./planner";
 
@@ -40,6 +41,9 @@ export class GitHubSync {
   private lastFetch = 0;
   private interval = MIN_POLL_MS;
   private pausedUntil = 0;
+  /** Draft PRs that already carry the WIP label (checked once per run). */
+  private wip = new Set<number>();
+  private wipLabelReady = false;
 
   constructor(private hub: Hub, private planner: Planner, private repo: string | null) {}
 
@@ -124,6 +128,7 @@ export class GitHubSync {
 
       for (const pr of next) {
         const old = this.prev.get(pr.number);
+        if (pr.draft && !pr.merged && !pr.closed && pr.taskId) void this.markWip(pr.number);
         if (JSON.stringify(old) !== JSON.stringify(pr)) this.hub.emit({ type: "pr.updated", pr: { ...pr } });
         if (!this.first) this.react(old, pr);
         this.syncTask(pr);
@@ -155,9 +160,35 @@ export class GitHubSync {
   private syncTask(pr: PullRequest) {
     const task = pr.taskId ? this.planner.task(pr.taskId) : undefined;
     if (!task || pr.closed) return;
+    // A draft is work in progress (an agent saving its work before a usage limit): the task stays in progress.
+    if (pr.draft && !pr.merged) {
+      if (task.prNumber !== pr.number) this.planner.updateTask(task.id, { prNumber: pr.number });
+      return;
+    }
     if (pr.merged && task.status !== "done") this.planner.updateTask(task.id, { status: "done", prNumber: pr.number });
     else if (!pr.merged && (task.status === "todo" || task.status === "in-progress")) this.planner.updateTask(task.id, { status: "in-review", prNumber: pr.number });
     else if (!pr.merged && task.prNumber !== pr.number) this.planner.updateTask(task.id, { prNumber: pr.number });
+  }
+
+  /** Agents are asked to label their draft PRs WIP; this makes sure of it (the host's gh can create the label). */
+  private async markWip(number: number) {
+    if (!this.repo || this.wip.has(number)) return;
+    this.wip.add(number);
+    if (!this.wipLabelReady) {
+      await run("gh", ["label", "create", "WIP", "--repo", this.repo, "--color", "FBCA04", "--description", "Work in progress", "--force"], { timeoutMs: 20_000 });
+      this.wipLabelReady = true;
+    }
+    const r = await run("gh", ["pr", "edit", String(number), "--repo", this.repo, "--add-label", "WIP"], { timeoutMs: 20_000 });
+    if (!r.ok) {
+      this.wip.delete(number);
+      log.warn(`could not add the WIP label to #${number}: ${r.stderr.trim().split("\n")[0]}`);
+    }
+  }
+
+  private async clearWip(number: number) {
+    if (!this.repo) return;
+    this.wip.delete(number);
+    await run("gh", ["pr", "edit", String(number), "--repo", this.repo, "--remove-label", "WIP"], { timeoutMs: 20_000 });
   }
 
   private react(old: PullRequest | undefined, pr: PullRequest) {
@@ -167,7 +198,9 @@ export class GitHubSync {
     const lead = hub.snap.config.team.find((a) => a.isLead);
     const ref = `#${pr.number} ${pr.title}`;
 
-    if (!old && !pr.merged && !pr.closed) hub.activity("pr.opened", who, `${hub.name(who)} opened PR ${ref}`);
+    if (!old && !pr.merged && !pr.closed) hub.activity("pr.opened", who, `${hub.name(who)} ${pr.draft ? "saved work in draft PR" : "opened PR"} ${ref}`);
+    // A draft became ready for review: it is no longer work in progress.
+    if (old?.draft && !pr.draft && !pr.merged && !pr.closed) void this.clearWip(pr.number);
     if (pr.closed && !old?.closed) return hub.activity("config", who, `PR #${pr.number} was closed without merging`);
 
     if (pr.merged && !old?.merged) {
