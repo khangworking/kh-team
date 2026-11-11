@@ -1,4 +1,5 @@
 import { budgetLevel, formatUsd } from "../../data/budget";
+import { ACCOUNT_LABEL, formatReset, LIMIT_WARN_AT } from "../../data/limits";
 import { PROVIDER_INFO } from "../../data/providers";
 import type { SimSpeed } from "../../data/source";
 import { officeActions, selectAttention, useOffice } from "../../store/office";
@@ -95,6 +96,27 @@ export function TopBar() {
           +
         </button>
       </div>
+
+      {live &&
+        (snap.rateLimits ?? []).map((l) => {
+          const blocked = l.blockedUntil && Date.parse(l.blockedUntil) > Date.now();
+          const top = Object.entries(l.windows).sort((a, b) => b[1].usedPct - a[1].usedPct)[0];
+          if (!blocked && !(top && top[1].usedPct >= LIMIT_WARN_AT)) return null;
+          const name = top?.[0] === "sevenDay" ? "weekly" : "5h";
+          return (
+            <span
+              key={l.account}
+              className={`chip whitespace-nowrap text-[13px] ${blocked ? "bg-red text-white" : "bg-yellow"}`}
+              title={
+                blocked
+                  ? `${ACCOUNT_LABEL[l.account]} usage limit reached. HQ waits for the reset${l.guessed ? " (the time is a guess; HQ looks again then)" : ""}, holds messages for these agents and tells the lead not to assign them work.`
+                  : `${ACCOUNT_LABEL[l.account]}: the ${name} usage window is ${Math.round(top![1].usedPct)}% used. It resets ${formatReset(top![1].resetsAt)}.`
+              }
+            >
+              {ACCOUNT_LABEL[l.account]} · {blocked ? `limit, back ${formatReset(l.blockedUntil!)}` : `${name} ${Math.round(top![1].usedPct)}%`}
+            </span>
+          );
+        })}
 
       {live && budget && (paid || budget.spentUsd > 0) && (
         <button

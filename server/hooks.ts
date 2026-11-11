@@ -4,6 +4,7 @@
 import type { Budget } from "./budget";
 import type { Hub } from "./hub";
 import type { Inbox } from "./inbox";
+import type { RateLimits } from "./rateLimits";
 
 interface HookPayload {
   prompt?: string;
@@ -15,6 +16,8 @@ interface HookPayload {
   /** Cost: this step's USD. StatusLine (Claude Code): { total_cost_usd } for the whole session. */
   cost?: number | { total_cost_usd?: number };
   session_id?: string;
+  /** StatusLine (Claude Code subscribers): the 5-hour and weekly usage windows. */
+  rate_limits?: unknown;
 }
 
 const clip = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
@@ -75,7 +78,15 @@ export interface HookResult {
   response?: Record<string, unknown>;
 }
 
-export function handleHook(hub: Hub, inbox: Inbox, agentId: string, event: string, body: HookPayload, budget?: Pick<Budget, "record" | "recordTotal">): HookResult {
+export function handleHook(
+  hub: Hub,
+  inbox: Inbox,
+  agentId: string,
+  event: string,
+  body: HookPayload,
+  budget?: Pick<Budget, "record" | "recordTotal">,
+  limits?: Pick<RateLimits, "observe" | "hit" | "resumed">,
+): HookResult {
   const st = hub.status(agentId);
   const name = hub.name(agentId);
   if (!st) return { ok: false };
@@ -87,6 +98,7 @@ export function handleHook(hub: Hub, inbox: Inbox, agentId: string, event: strin
   if (event === "StatusLine") {
     const total = typeof body.cost === "object" ? body.cost?.total_cost_usd : undefined;
     if (typeof total === "number") budget?.recordTotal(agentId, String(body.session_id ?? ""), total);
+    if (body.rate_limits) limits?.observe(agentId, body.rate_limits);
     return { ok: true };
   }
   inbox.noteHook(agentId, event);
@@ -122,6 +134,12 @@ export function handleHook(hub: Hub, inbox: Inbox, agentId: string, event: strin
       break;
     }
     case "Notification": {
+      // Claude Code waits out a usage limit and continues by itself. These say how that went; none needs the user,
+      // and HQ's own reset handling covers a wait that ended without continuing.
+      if (body.notification_type?.startsWith("quota_auto_resume_")) {
+        if (body.notification_type === "quota_auto_resume_fired") limits?.resumed(agentId);
+        break;
+      }
       const msg = body.message ?? "Needs your attention";
       // "Waiting for your input" fires after a finished turn sits idle — not urgent.
       if (/waiting for your input/i.test(msg) || body.notification_type === "idle_prompt") {
@@ -157,6 +175,12 @@ export function handleHook(hub: Hub, inbox: Inbox, agentId: string, event: strin
     case "StopFailure": {
       // The turn ended on an API error. Not "finished": say why, and keep queued messages for later.
       turnOpen.set(agentId, false);
+      // A subscription's usage limit isn't an error to fix: HQ waits for the reset (rateLimits.ts).
+      if (body.error === "rate_limit" && hub.cfg(agentId)?.auth === "subscription" && limits) {
+        hub.setStatus(agentId, { state: "idle", note: "Usage limit reached" });
+        limits.hit(agentId, null);
+        break;
+      }
       const why = typeof body.error === "string" ? body.error : body.error ? JSON.stringify(body.error) : "API error";
       hub.setStatus(agentId, { state: "needs-input", note: `Provider error: ${clip(why, 100)}` });
       hub.activity("agent.needs-input", agentId, `${name} stopped on a provider error: ${clip(why, 60)}`);

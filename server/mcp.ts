@@ -47,7 +47,9 @@ function buildServer(hub: Hub, planner: Planner, me: string): McpServer {
           return {
             id: a.id, name: a.name, role: a.role, lead: a.isLead, you: a.id === me,
             running: st?.session.state === "running", state: st?.state, task: st?.currentTaskId ?? null,
-            free: st?.session.state === "running" && !a.isLead && !planner.currentTask(a.id),
+            // A subscription at its usage limit can't work until then: don't assign it anything.
+            limitedUntil: st?.limitedUntil && Date.parse(st.limitedUntil) > Date.now() ? st.limitedUntil : null,
+            free: st?.session.state === "running" && !a.isLead && !planner.currentTask(a.id) && !(st?.limitedUntil && Date.parse(st.limitedUntil) > Date.now()),
           };
         }),
       ),

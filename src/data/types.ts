@@ -141,7 +141,27 @@ export interface AgentStatus {
   currentTaskId: string | null;
   stateSince: string; // ISO time
   note: string | null; // e.g. "Asking: max PDF size 10 MB or 20 MB?"
+  /** The agent's subscription hit its usage limit: when it can work again (ISO). Messages are held until then. */
+  limitedUntil?: string | null;
   session: SessionInfo;
+}
+
+/** A subscription whose usage limits HQ follows: Claude Pro/Max ("anthropic") or ChatGPT for Codex ("openai"). */
+export type LimitAccount = "anthropic" | "openai";
+
+export interface LimitWindow {
+  usedPct: number; // 0-100
+  resetsAt: string; // ISO
+}
+
+export interface AccountLimit {
+  account: LimitAccount;
+  /** The 5-hour and weekly windows, as far as the CLI reports them (Claude Code does). */
+  windows: { fiveHour?: LimitWindow; sevenDay?: LimitWindow };
+  /** Set while the subscription can't be used: when it works again (ISO). */
+  blockedUntil: string | null;
+  /** The CLI didn't say when: HQ looks again later. */
+  guessed: boolean;
 }
 
 export type BoardStatus = "active" | "planned" | "done";
@@ -355,6 +375,8 @@ export interface OfficeSnapshot {
   providerKeys?: ProviderId[];
   /** Today's spend by agents that use an API key, against the office's daily limit. */
   budget?: BudgetState;
+  /** Usage limits of the subscriptions the team uses. */
+  rateLimits?: AccountLimit[];
 }
 
 export interface BudgetState {

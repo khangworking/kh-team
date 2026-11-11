@@ -46,6 +46,13 @@ Fork, build gốc, thêm `auth`/`provider`, adapter OpenCode chạy trong sandbo
   - Phát hiện: Claude Code qua hook `StopFailure` (matcher `rate_limit`) và `rate_limits.five_hour`/`seven_day` (`used_percentage`, `resets_at`) trong JSON của `statusLine`; Codex qua câu "You've hit your usage limit" trên màn hình; OpenCode qua `session.execution.failed` → hook `StopFailure` (đã có).
   - Trạng thái `rate-limited` theo tài khoản, kèm giờ reset, hiện trên dashboard; cảnh báo khi một cửa sổ chạm 80%.
   - Khi bị chặn: giữ tin nhắn trong inbox, báo lead không giao việc cho các agent đó; đến `resets_at` thì tự nhắn agent làm tiếp task dở.
+  - **Đã làm (2026-11-11, `server/rateLimits.ts`):** trạng thái theo tài khoản (Claude = mọi agent Claude dùng subscription; Codex = mọi agent Codex dùng subscription), không phải theo agent.
+    - Claude: `statusLine` giờ được ghi cho mọi agent Claude (trước chỉ agent API key) và mang `rate_limits`; thêm hook `StopFailure`. Cửa sổ đạt 100% thì khoá tài khoản đến `resets_at`; 80% thì ghi cảnh báo. `StopFailure` loại `rate_limit` mà chưa biết giờ thì dùng cửa sổ đã gần hết, không có thì nhìn lại sau 30 phút.
+    - Codex: HQ đọc màn hình ("You've hit your usage limit … try again in … / at …"), mỗi thông báo xử lý một lần.
+    - Khi khoá: agent hiện chip "limit · back <giờ>" và ghi chú, tin nhắn của HQ không được gõ vào terminal, `assign_task` từ chối agent đó, `list_workers` báo `limitedUntil` và `free=false`, lead được báo một lần. Trạng thái được lưu ở `~/.jsmhq/<slug>/rate-limits.json` nên khởi động lại HQ không mất. Thanh trên cùng hiện chip theo tài khoản (đỏ khi khoá, vàng từ 80%).
+    - Khi hết hạn: lead được báo; sau 90 giây agent nào còn idle mà giữ task đang làm thì nhận lời nhắc "tiếp tục".
+    - **Phát hiện khi đọc tài liệu:** Claude Code (từ 2.1.234) đã tự chờ và tự tiếp tục sau khi hết giới hạn 5 giờ (mặc định bật, `autoContinueAtUsageLimit`), nên HQ không tự bấm tiếp; HQ chỉ hiện trạng thái, không gõ tin nhắn đè lên lúc chờ (gõ prompt sẽ huỷ chờ), và nhắc nếu agent không tự tiếp tục (giới hạn tuần cách hơn 24 giờ, tự động tiếp tục bị tắt, hoặc không có phiên đăng nhập claude.ai trong sandbox).
+    - **Chưa kiểm tra thật:** chưa chạm giới hạn thật với Claude hay Codex; câu chữ của Codex và cách `StopFailure` của Claude Code xuất hiện trong sandbox mới chỉ dựa trên tài liệu và test đơn vị. Cách bắt đầu chờ của Claude Code trong sbx (đăng nhập qua proxy OAuth) chưa rõ.
 - Review chéo: thêm công cụ review "agent" để một agent Reviewer (model khác) review PR bằng `gh pr review`.
 - Key qua proxy của sbx (`sbx secret set <dịch vụ> --sandbox <tên>`) cho Anthropic/OpenAI/Gemini/OpenRouter, để key không vào máy ảo; DeepSeek vẫn phải qua biến môi trường.
 - Session bền hơn:

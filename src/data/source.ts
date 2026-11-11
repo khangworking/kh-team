@@ -3,6 +3,7 @@ import type { StackConfig } from "./stack";
 import type {
   AccessDecision,
   AccessRequest,
+  AccountLimit,
   ActionItem,
   McpState,
   NewMcpServer,
@@ -35,6 +36,7 @@ export type OfficeEvent =
   | { type: "sbx.updated"; sbx: SbxState }
   | { type: "providerKeys.updated"; providers: ProviderId[] }
   | { type: "budget.updated"; budget: BudgetState }
+  | { type: "rateLimits.updated"; limits: AccountLimit[] }
   | { type: "workspace.info"; info: WorkspaceInfo }
   | { type: "config.updated"; config: HqConfig }
   | { type: "agent.updated"; agent: AgentStatus }

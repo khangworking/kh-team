@@ -95,7 +95,7 @@ export function writeHookScript(dir: string) {
 }
 
 // PostToolUse: the moment a question or permission prompt is answered, the tool completes.
-const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "SessionEnd"] as const;
+const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "StopFailure", "SessionEnd"] as const;
 
 /** URL agents use to reach HQ: through the sandbox proxy, or straight to localhost. */
 export function hqUrl(agent: AgentConfig, port: number): string {
@@ -202,11 +202,11 @@ export function writeSettings(dir: string, agent: AgentConfig, port: number, tok
   }
   // Let the agent use the Team MCP without a permission prompt for every call.
   const allow = new Set([...(settings.permissions?.allow ?? []), "mcp__hq"]);
-  // Claude Code's status line carries the session's running cost. HQ reads it for agents that use an API key
-  // (the daily budget). A status line the user set up themselves is left alone.
+  // Claude Code's status line carries the session's running cost (the daily budget counts API-key agents) and the
+  // subscription's usage windows (the usage limit wait). A status line the user set up themselves is left alone.
   const { statusLine: current, ...rest } = settings;
   const mine = !current || isOurs(String((current as { command?: unknown }).command ?? ""));
-  const statusLine = !mine ? current : agent.auth === "apiKey" ? { type: "command", command: hookCommand(`${hqUrl(agent, port)}`, token, agent.id, "StatusLine", script) } : undefined;
+  const statusLine = !mine ? current : { type: "command", command: hookCommand(`${hqUrl(agent, port)}`, token, agent.id, "StatusLine", script) };
   agentWrite(dir, file, JSON.stringify({ ...rest, ...(statusLine ? { statusLine } : {}), hooks, permissions: { ...(settings.permissions ?? {}), allow: [...allow] } }, null, 2) + "\n");
 }
 

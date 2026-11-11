@@ -1,3 +1,4 @@
+import { formatReset } from "../../data/limits";
 import { PROVIDER_INFO } from "../../data/providers";
 import { CLI_LABEL } from "../../data/types";
 import { selectTeam, useOffice, type AgentView } from "../../store/office";
@@ -36,6 +37,11 @@ function AgentCard({ a, focused, n, now }: { a: AgentView; focused: boolean; n: 
         <StateChip state={a.status.state} />
         <span className="font-term text-[16px] text-muted">{ago(a.status.stateSince, now)}</span>
         {a.config.mode === "local" && <span className="chip text-[11px]">local</span>}
+        {a.status.limitedUntil && Date.parse(a.status.limitedUntil) > now && (
+          <span className="chip text-[11px]" style={{ background: "#ffd0dc" }} title="This subscription hit its usage limit. HQ holds messages and waits for the reset.">
+            limit · back {formatReset(a.status.limitedUntil, now)}
+          </span>
+        )}
         {items > 0 && (
           <span className="chip text-[11px]" style={{ background: "#ffec27" }} title="Action items from this agent. Open Action items in the top bar.">
             {items} for you

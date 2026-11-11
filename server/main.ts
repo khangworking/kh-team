@@ -16,6 +16,7 @@ import { Planner } from "./planner";
 import { ActionItems } from "./actionItems";
 import { ProviderKeys } from "./providerKeys";
 import { Budget } from "./budget";
+import { RateLimits } from "./rateLimits";
 import { Sbx } from "./sbx";
 import { SbxMcp } from "./sbxMcp";
 import { run } from "./lib/exec";
@@ -85,6 +86,8 @@ async function main() {
   planner.actions = new ActionItems(hub, planner);
   const budget = new Budget(hub, { stop: (ids) => ids.forEach((id) => void sessions.stop(id)), notice: (title, details) => void planner.actions?.add("hq", title, details, false) });
   sessions.budgetBlocks = (id) => budget.blocks(id);
+  const limits = new RateLimits(hub, { notify: (id, text) => planner.notify(id, text) });
+  sessions.rateLimits = limits;
   budget.refresh();
   setInterval(() => budget.refresh(), 30_000).unref(); // midnight starts a new day
 
@@ -99,6 +102,7 @@ async function main() {
     inbox,
     planner,
     budget,
+    limits,
     port,
     browserToken: uiToken,
     agentToken: token,
@@ -124,6 +128,7 @@ async function main() {
     log.info(sessions.backend.persistent ? "stopping HQ — agent sessions keep running in tmux" : "stopping HQ and its agents — sandboxes and folders are kept");
     sessions.shutdown();
     budget.flush();
+    limits.stop();
     sbx.stopApprovalPolling();
     github.stop();
     process.exit(0);
