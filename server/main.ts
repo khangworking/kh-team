@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { makeCommands } from "./commands";
 import { startHttp } from "./http";
 import { Hub } from "./hub";
+import { BranchCleanup } from "./branchCleanup";
 import { CrossReview } from "./crossReview";
 import { GitHubSync } from "./githubSync";
 import { Inbox } from "./inbox";
@@ -91,6 +92,8 @@ async function main() {
   const limits = new RateLimits(hub, { notify: (id, text) => planner.notify(id, text) });
   sessions.rateLimits = limits;
   const credit = new OutOfCredit(hub, planner, { dirOf: (id) => hub.status(id)?.session.workspace ?? null, notice: (title, details) => void planner.actions?.add("hq", title, details, false) });
+  const cleanup = new BranchCleanup(hub);
+  sessions.branchCleanup = cleanup;
   const cross = new CrossReview(hub, planner, { notice: (title, details) => void planner.actions?.add("hq", title, details, false) });
   budget.refresh();
   setInterval(() => budget.refresh(), 30_000).unref(); // midnight starts a new day
@@ -118,7 +121,8 @@ async function main() {
   });
   sessions.startPolling();
   sbx.startApprovalPolling();
-  const github = new GitHubSync(hub, planner, repo.github, cross);
+  const github = new GitHubSync(hub, planner, repo.github, cross, cleanup);
+  cleanup.request(15_000); // branches deleted while HQ was off
   cross.onChange = () => github.nudge(1000);
   github.start();
 
