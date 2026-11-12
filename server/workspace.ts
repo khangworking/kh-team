@@ -52,5 +52,7 @@ export async function ensureWorkspace(agent: AgentConfig, projectSlug: string, r
   }
   // A local clone points origin at the folder; agents need the real remote to push.
   if (repo.originUrl) await run("git", ["remote", "set-url", "origin", agentRemoteUrl(repo.originUrl)], { cwd: dir });
+  // The agent's own fetch and pull forget remote branches that were deleted on GitHub (branchCleanup.ts removes the local ones).
+  await run("git", ["config", "fetch.prune", "true"], { cwd: dir });
   return dir;
 }

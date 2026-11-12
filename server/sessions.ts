@@ -12,6 +12,7 @@ import { CLI_LABEL, HOST_TERMINAL, type AgentCli, type SetupCheckId, type Worksp
 import { PROVIDER_INFO } from "../src/data/providers";
 import { adapters, localBinary, shouldResume } from "./adapters";
 import type { Hub } from "./hub";
+import type { BranchCleanup } from "./branchCleanup";
 import type { RateLimits } from "./rateLimits";
 import { sessionBackend, type LaunchSpec, type TermHandle } from "./backends";
 import { resolveCommand } from "./backends/pty";
@@ -71,6 +72,8 @@ export class Sessions {
   budgetBlocks: (agentId: string) => boolean = () => false;
   /** Subscription usage limits (Codex shows its limit on screen; HQ reads it there). */
   rateLimits: RateLimits | null = null;
+  /** Set by main: drops branches deleted on GitHub from the agents' folders. */
+  branchCleanup: BranchCleanup | null = null;
   /** Called when HQ reattaches to a session that was already running (e.g. after an HQ restart). */
   onSessionReattached: (agentId: string) => void = () => {};
   /** When the agent's last hook arrived (from the inbox). */
@@ -113,6 +116,7 @@ export class Sessions {
     try {
       hub.setSession(id, { state: "starting", detail: "Preparing folder…", workspace: workspaceFor(agent, hub.slug) });
       const dir = await ensureWorkspace(agent, hub.slug, hub.repo);
+      this.branchCleanup?.request();
       const adapter = adapters[agent.cli];
       // App variables reach the agent in sandbox mode and in Local mode with tmux (not Local on Windows).
       const hasEnvFile = !!this.envFileFor(id) && (agent.mode === "sandbox" || this.backend.persistent);

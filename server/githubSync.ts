@@ -2,6 +2,7 @@
 // comments → tell the author; passed → tell the lead; merged → task done.
 
 import type { PullRequest } from "../src/data/types";
+import type { BranchCleanup } from "./branchCleanup";
 import type { CrossReview } from "./crossReview";
 import { branchAgent, fetchPrs, OPEN_LIMIT, RateLimited, taskIdOf, toPullRequest } from "./github";
 import type { Hub } from "./hub";
@@ -46,7 +47,7 @@ export class GitHubSync {
   private wip = new Set<number>();
   private wipLabelReady = false;
 
-  constructor(private hub: Hub, private planner: Planner, private repo: string | null, private cross?: CrossReview) {}
+  constructor(private hub: Hub, private planner: Planner, private repo: string | null, private cross?: CrossReview, private cleanup?: BranchCleanup) {}
 
   start() {
     if (!this.repo) {
@@ -209,10 +210,14 @@ export class GitHubSync {
     if (!old && !pr.merged && !pr.closed) hub.activity("pr.opened", who, `${hub.name(who)} ${pr.draft ? "saved work in draft PR" : "opened PR"} ${ref}`);
     // A draft became ready for review: it is no longer work in progress.
     if (old?.draft && !pr.draft && !pr.merged && !pr.closed) void this.clearWip(pr.number);
-    if (pr.closed && !old?.closed) return hub.activity("config", who, `PR #${pr.number} was closed without merging`);
+    if (pr.closed && !old?.closed) {
+      this.cleanup?.request(); // its branch may be gone from GitHub now
+      return hub.activity("config", who, `PR #${pr.number} was closed without merging`);
+    }
 
     if (pr.merged && !old?.merged) {
       hub.activity("pr.merged", null, `PR ${ref} was merged`);
+      this.cleanup?.request(); // "delete branch" on merge: the agents' copies of it can go
       if (lead) this.planner.notify(lead.id, `PR #${pr.number} (${pr.title}) was merged${pr.taskId ? `; ${pr.taskId} is done` : ""}. Assign the next task if anything is waiting.`);
       return;
     }
