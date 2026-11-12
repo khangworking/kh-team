@@ -3,7 +3,7 @@
 //   npx tsx scripts/resume-test.ts
 
 import assert from "node:assert/strict";
-import { adapters, shouldResume } from "../server/adapters";
+import { adapters, opencodeConfig, opencodeModel, shouldResume } from "../server/adapters";
 import { newAgent } from "../server/store";
 import type { AgentCli, AgentConfig, HqConfig } from "../src/data/types";
 
@@ -36,5 +36,18 @@ assert.equal(shouldResume(agent("codex"), "claude"), false, "a sandbox rebuilt f
 assert.equal(shouldResume(agent("opencode", { resume: false }), "opencode"), false, "the user turned it off");
 assert.equal(shouldResume(agent("claude", { resume: undefined }), "claude"), true, "an older config continues");
 assert.equal(shouldResume(agent("claude", { mode: "local" }), "claude"), false);
+
+// OpenCode does not know Claude Code's model names: "anthropic/opus" is "Model unavailable". Full ids pass through.
+const oc = (patch: Partial<AgentConfig>) => agent("opencode", { auth: "apiKey", ...patch });
+assert.equal(opencodeModel(oc({ provider: "anthropic", model: "" })), "claude-opus-5-5", "the default for Anthropic is no longer the bare alias");
+assert.equal(opencodeModel(oc({ provider: "anthropic", model: "sonnet" })), "claude-sonnet-5-5");
+assert.equal(opencodeModel(oc({ provider: "anthropic", model: "Haiku" })), "claude-haiku-5-5");
+assert.equal(opencodeModel(oc({ provider: "anthropic", model: "claude-haiku-4-5" })), "claude-haiku-4-5", "a full id is left alone");
+assert.equal(opencodeModel(oc({ provider: "deepseek", model: "" })), "deepseek-v4-pro");
+assert.equal(opencodeModel(oc({ provider: "deepseek", model: "opus" })), "opus", "only Anthropic's aliases are translated");
+assert.equal(opencodeModel(oc({ provider: "openai", model: "" })), "", "no model: OpenCode picks");
+const written = opencodeConfig(oc({ provider: "anthropic", model: "opus" }), cfg, "tok", "/x") as { model?: string };
+assert.equal(written.model, "anthropic/claude-opus-5-5");
+assert.equal(adapters.claude.launch(agent("claude", { provider: "anthropic", model: "opus" }), cfg, "/x").args.slice(-2).join(" "), "--model opus", "Claude Code keeps its alias");
 
 console.log("✓ resume");

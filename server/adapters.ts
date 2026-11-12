@@ -139,8 +139,20 @@ function opencodeProviders(agent: AgentConfig): Record<string, unknown> {
   return info.keyVar ? { [agent.provider]: { settings: { apiKey: `{env:${info.keyVar}}` } } } : {};
 }
 
+/**
+ * Claude Code takes "opus", "sonnet" and "haiku" as model names; OpenCode only knows full ids ("Model unavailable:
+ * anthropic/opus"). Those three, and nothing else, are turned into the current ids.
+ */
+const OPENCODE_ANTHROPIC_IDS: Record<string, string> = { opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5" };
+
+/** The model OpenCode starts with for this agent ("" = OpenCode's own choice). */
+export function opencodeModel(agent: Pick<AgentConfig, "provider" | "model">): string {
+  const chosen = agent.model.trim() || PROVIDER_INFO[agent.provider].models[0] || "";
+  return agent.provider === "anthropic" ? (OPENCODE_ANTHROPIC_IDS[chosen.toLowerCase()] ?? chosen) : chosen;
+}
+
 export function opencodeConfig(agent: AgentConfig, cfg: HqConfig, token: string, dir: string): Record<string, unknown> {
-  const model = agent.model.trim() || PROVIDER_INFO[agent.provider].models[0] || "";
+  const model = opencodeModel(agent);
   return {
     $schema: "https://opencode.ai/config.json",
     ...(model ? { model: `${agent.provider}/${model}` } : {}),
