@@ -57,7 +57,7 @@ const cand = (a: AgentConfig, available = true, open = 0) => ({ agent: a, availa
 // ---- The whole flow with fakes
 const dir = mkdtempSync(join(tmpdir(), "hq-cross-"));
 const file = join(dir, "reviews.json");
-const make = (team: AgentConfig[], f = file) => {
+const make = (team: AgentConfig[], f = file, opts: { now?: () => number; timeoutMs?: number } = {}) => {
   const statuses = new Map(team.map((a) => [a.id, { state: "idle", currentTaskId: null as string | null, outOfCredit: null as string | null, limitedUntil: null as string | null, session: { state: "running" } }]));
   const activity: string[] = [];
   const sent: [string, string][] = [];
@@ -73,7 +73,7 @@ const make = (team: AgentConfig[], f = file) => {
     setStatus: () => {},
   };
   const planner = { notify: (id: string, text: string) => sent.push([id, text]) };
-  const cross = new CrossReview(hub as never, planner as never, { notice: (t, d) => notices.push([t, d]) }, f);
+  const cross = new CrossReview(hub as never, planner as never, { notice: (t, d) => notices.push([t, d]) }, f, opts);
   return { cross, hub, statuses, activity, sent, notices, team };
 };
 const pr = (n: number, sha: string, authorId = "dwight") => ({ number: n, title: `[T${n}] Thing`, sha, authorId });
@@ -177,7 +177,83 @@ const pr = (n: number, sha: string, authorId = "dwight") => ({ number: n, title:
   busy.statuses.get("kevin")!.outOfCredit = "no credit";
   assert.equal(busy.cross.sync(pr(11, "aaa")).reviewer, "Pam");
   busy.statuses.get("pam")!.limitedUntil = new Date(Date.now() + 3_600_000).toISOString();
-  assert.match(busy.cross.sync(pr(11, "aaa")).note ?? "", /Waiting for Pam \(not available right now\)/);
+  assert.match(busy.cross.sync(pr(11, "aaa")).note ?? "", /Waiting for Pam \(at its usage limit\)/);
+}
+
+{
+  // A reviewer that was asked runs out of credit (or hits a usage limit): the PR goes to another one, at once.
+  const t = make([michael, dwight, kevin, pam], join(dir, "failover.json"));
+  assert.equal(t.cross.sync(pr(40, "a")).reviewer, "Kevin");
+  assert.equal(t.sent.length, 1);
+  t.statuses.get("kevin")!.outOfCredit = "no credit";
+  const v = t.cross.sync(pr(40, "a"));
+  assert.equal(v.reviewer, "Pam");
+  assert.equal(v.state, "reviewing");
+  assert.deepEqual(t.sent.slice(1).map(([id]) => id), ["kevin", "pam"], "the old one is told to drop it, the new one is asked");
+  assert.match(t.sent[1][1], /gave PR #40 to Pam/);
+  assert.match(t.sent[2][1], /Review PR #40/);
+  assert.ok(!/reviewed it before/.test(t.sent[2][1]), "a new reviewer has not seen it");
+  assert.ok(t.activity.some((a) => /PR #40: Kevin is out of credit, so HQ asked Pam/.test(a)), t.activity.join("|"));
+  // Kevin's late answer is refused; Pam's counts.
+  assert.throws(() => t.cross.submit("kevin", 40, "approve", "fine"), /did not ask you/);
+  // Not back and forth: with Pam down too, and Kevin back, the PR stays with Pam (Kevin was already replaced).
+  t.statuses.get("kevin")!.outOfCredit = null;
+  t.statuses.get("pam")!.limitedUntil = new Date(Date.now() + 3_600_000).toISOString();
+  const stay = t.cross.sync(pr(40, "a"));
+  assert.equal(stay.reviewer, "Pam");
+  assert.equal(stay.note, "Waiting for Pam (at its usage limit)");
+  assert.equal(t.sent.length, 3, "nothing more was sent");
+  // After a restart it still knows who was tried.
+  const again = make([michael, dwight, kevin, pam], join(dir, "failover.json"));
+  again.statuses.get("pam")!.limitedUntil = new Date(Date.now() + 3_600_000).toISOString();
+  assert.equal(again.cross.sync(pr(40, "a")).reviewer, "Pam");
+  assert.equal(again.sent.length, 0);
+  // A new commit starts over: Kevin is fine again and Pam is not.
+  assert.equal(t.cross.sync(pr(40, "b")).reviewer, "Kevin");
+}
+
+{
+  // A reviewer that does not answer: reminded at half the time, replaced at the full time; one that is working is left alone.
+  let clock = 1_000_000;
+  const MIN = 60_000;
+  const t = make([michael, dwight, kevin, pam], join(dir, "slow.json"), { now: () => clock, timeoutMs: 30 * MIN });
+  assert.equal(t.cross.sync(pr(41, "a")).reviewer, "Kevin");
+  clock += 10 * MIN;
+  t.cross.sync(pr(41, "a"));
+  assert.equal(t.sent.length, 1, "too early for a reminder");
+  clock += 6 * MIN; // 16 minutes
+  t.cross.sync(pr(41, "a"));
+  assert.equal(t.sent.length, 2);
+  assert.deepEqual([t.sent[1][0], /still waiting for your review of PR #41/.test(t.sent[1][1])], ["kevin", true]);
+  t.cross.sync(pr(41, "a"));
+  assert.equal(t.sent.length, 2, "reminded once");
+  t.statuses.get("kevin")!.state = "working"; // busy: a long review is not a late one
+  clock += 20 * MIN; // 36 minutes
+  assert.equal(t.cross.sync(pr(41, "a")).reviewer, "Kevin");
+  assert.equal(t.sent.length, 2);
+  t.statuses.get("kevin")!.state = "idle";
+  const v = t.cross.sync(pr(41, "a"));
+  assert.equal(v.reviewer, "Pam", "idle and silent: replaced");
+  assert.deepEqual(t.sent.slice(2).map(([id]) => id), ["kevin", "pam"]);
+  assert.ok(t.activity.some((a) => /Kevin has not answered in 36 minutes, so HQ asked Pam/.test(a)), t.activity.join("|"));
+  clock += 31 * MIN;
+  assert.equal(t.cross.sync(pr(41, "a")).reviewer, "Pam", "Kevin was already tried: nobody else");
+  assert.equal(t.notices.length, 1, "the user hears that nobody else can take it");
+  assert.match(t.notices[0][0], /PR #41 is waiting for Pam/);
+  t.cross.sync(pr(41, "a"));
+  assert.equal(t.notices.length, 1, "once");
+
+  // One that is stopped counts as silent too, and the only reviewer left is told about to the user, not replaced by itself.
+  const solo = make([michael, dwight, kevin], join(dir, "solo.json"), { now: () => clock, timeoutMs: 30 * MIN });
+  solo.cross.sync(pr(42, "a"));
+  solo.statuses.get("kevin")!.session.state = "stopped";
+  clock += 31 * MIN;
+  const late = solo.cross.sync(pr(42, "a"));
+  assert.equal(late.reviewer, "Kevin");
+  assert.match(late.note ?? "", /Waiting for Kevin \(not running\)/);
+  assert.equal(solo.notices.length, 1);
+  assert.match(solo.notices[0][1], /Start Kevin/);
+  assert.equal(solo.sent.length, 1, "no second request to itself");
 }
 
 {

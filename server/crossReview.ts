@@ -23,6 +23,8 @@ import type { Planner } from "./planner";
 
 /** Requests for changes before HQ stops asking and leaves it to the user. */
 export const MAX_ROUNDS = 3;
+/** A reviewer that is not busy and has not answered this long is reminded at half of it, then replaced. */
+export const REVIEW_TIMEOUT_MS = 30 * 60_000;
 
 export type Verdict = "approve" | "changes";
 
@@ -50,6 +52,14 @@ interface Entry {
   told: boolean;
   title: string;
   authorId: string;
+  /** When the current reviewer was asked (ms since the epoch). */
+  askedAt: number;
+  /** Reviewers already asked for this commit and replaced: they are not asked again for it. */
+  tried: string[];
+  /** The reviewer was reminded. */
+  nudged: boolean;
+  /** The user was told the reviewer is late and nobody else can take it. */
+  late: boolean;
 }
 
 /** The family a model belongs to, for "a different model": the provider, or whoever made it behind a router. */
@@ -97,6 +107,11 @@ export function chooseReviewer(
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 
+export interface CrossReviewOptions {
+  now?: () => number;
+  timeoutMs?: number;
+}
+
 export interface CrossReviewDeps {
   /** Something only the user can resolve (nobody can review; the models disagree). */
   notice(title: string, details: string): void;
@@ -107,10 +122,36 @@ export class CrossReview {
   /** Set by main: look at GitHub again soon (a verdict just arrived). */
   onChange: () => void = () => {};
 
-  constructor(private hub: Hub, private planner: Pick<Planner, "notify">, private deps: CrossReviewDeps, private file = join(projectHome(hub.slug), "reviews.json")) {
+  private now: () => number;
+  private timeoutMs: number;
+
+  constructor(
+    private hub: Hub,
+    private planner: Pick<Planner, "notify">,
+    private deps: CrossReviewDeps,
+    private file = join(projectHome(hub.slug), "reviews.json"),
+    opts: CrossReviewOptions = {},
+  ) {
+    this.now = opts.now ?? Date.now;
+    this.timeoutMs = opts.timeoutMs ?? REVIEW_TIMEOUT_MS;
     try {
       const saved = existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as Record<string, Entry>) : {};
-      for (const [n, e] of Object.entries(saved)) if (Number.isInteger(Number(n)) && e && typeof e.sha === "string") this.entries.set(Number(n), { ...e, summary: e.summary ?? "", issues: e.issues ?? 0, rounds: e.rounds ?? 0, told: !!e.told, title: e.title ?? "", authorId: e.authorId ?? "" });
+      for (const [n, e] of Object.entries(saved))
+        if (Number.isInteger(Number(n)) && e && typeof e.sha === "string")
+          this.entries.set(Number(n), {
+            ...e,
+            summary: e.summary ?? "",
+            issues: e.issues ?? 0,
+            rounds: e.rounds ?? 0,
+            told: !!e.told,
+            title: e.title ?? "",
+            authorId: e.authorId ?? "",
+            // An older file has no clock: the wait starts now.
+            askedAt: typeof e.askedAt === "number" ? e.askedAt : this.now(),
+            tried: Array.isArray(e.tried) ? e.tried : [],
+            nudged: !!e.nudged,
+            late: !!e.late,
+          });
     } catch (err) {
       log.warn("reviews.json is unreadable; ignoring it:", err);
     }
@@ -126,9 +167,16 @@ export class CrossReview {
     }
   }
 
-  private available(id: string): boolean {
+  /** Why an agent can't review right now, or null when it can. */
+  private unavailable(id: string): string | null {
     const st = this.hub.status(id);
-    return st?.session.state === "running" && !st.outOfCredit && !(st.limitedUntil && Date.parse(st.limitedUntil) > Date.now());
+    if (st?.outOfCredit) return "out of credit";
+    if (st?.limitedUntil && Date.parse(st.limitedUntil) > Date.now()) return "at its usage limit";
+    return st?.session.state === "running" ? null : "not running";
+  }
+
+  private available(id: string): boolean {
+    return this.unavailable(id) === null;
   }
 
   private candidates(): Candidate[] {
@@ -149,22 +197,23 @@ export class CrossReview {
     if (e.verdict === "approve") return { ...base, state: "approved", note: null };
     if (e.verdict === "changes" && e.rounds >= MAX_ROUNDS) return { ...base, state: "stuck", note: `Changes were requested ${MAX_ROUNDS} times: it needs you` };
     if (e.verdict === "changes") return { ...base, state: "changes", note };
-    const away = e.reviewerId && !this.available(e.reviewerId) ? " (not available right now)" : "";
+    const reason = e.reviewerId ? this.unavailable(e.reviewerId) : null;
+    const away = reason ? ` (${reason})` : "";
     return { ...base, state: reviewer ? "reviewing" : "waiting", note: note ?? (reviewer ? `Waiting for ${reviewer}${away}` : "Waiting for a reviewer") };
   }
 
   /** Called for each open, non-draft PR on every poll: asks for a review when one is needed and says how it stands. */
   sync(pr: { number: number; title: string; sha: string; authorId: string }): AgentReview {
     const e = this.entries.get(pr.number);
-    // Already asked for this commit (or answered).
-    if (e && e.sha === pr.sha && e.reviewerId && (e.verdict || this.stillFits(e.reviewerId, pr.authorId))) return this.view(e);
+    // Already asked for this commit (or answered). An asked reviewer that can't or doesn't answer is replaced.
+    if (e && e.sha === pr.sha && e.reviewerId && (e.verdict || this.stillFits(e.reviewerId, pr.authorId))) return e.verdict ? this.view(e) : this.watch(pr, e);
     // The models disagreed MAX_ROUNDS times: stop asking; it is the user's call.
     if (e && e.verdict === "changes" && e.rounds >= MAX_ROUNDS) return this.view(e);
 
     const author = this.hub.cfg(pr.authorId) ?? null;
     const { reviewer, why } = chooseReviewer(this.candidates(), author, e?.reviewerId ?? null);
     if (!reviewer) {
-      const next: Entry = { reviewerId: null, sha: pr.sha, verdict: null, summary: "", issues: 0, rounds: e?.rounds ?? 0, told: e?.told ?? false, title: pr.title, authorId: pr.authorId };
+      const next: Entry = { ...this.blank(pr, e), reviewerId: null, told: e?.told ?? false };
       if (!next.told) {
         next.told = true;
         this.hub.activity("config", null, `PR #${pr.number} has no reviewer: ${why}`);
@@ -176,10 +225,59 @@ export class CrossReview {
     }
 
     const again = !!e?.rounds;
-    const next: Entry = { reviewerId: reviewer.id, sha: pr.sha, verdict: null, summary: "", issues: 0, rounds: e?.rounds ?? 0, told: false, title: pr.title, authorId: pr.authorId };
+    const next: Entry = { ...this.blank(pr, e), reviewerId: reviewer.id };
     this.entries.set(pr.number, next);
     this.save();
     this.planner.notify(reviewer.id, this.request(pr, again));
+    return this.view(next);
+  }
+
+  /** A fresh entry for a new commit: nothing asked yet; the rounds so far carry over. */
+  private blank(pr: { title: string; sha: string; authorId: string }, e?: Entry): Entry {
+    return { reviewerId: null, sha: pr.sha, verdict: null, summary: "", issues: 0, rounds: e?.rounds ?? 0, told: false, title: pr.title, authorId: pr.authorId, askedAt: this.now(), tried: [], nudged: false, late: false };
+  }
+
+  /**
+   * A reviewer was asked and has not answered. One that is out of credit or at a usage limit is replaced at once; one that is
+   * stopped, or idle for the timeout, is reminded at half of it and replaced at the full time. Somebody working is left alone.
+   * A reviewer already tried for this commit is not asked again; with nobody else, the PR waits (the user hears of it once).
+   */
+  private watch(pr: { number: number; title: string; sha: string; authorId: string }, e: Entry): AgentReview {
+    const id = e.reviewerId!;
+    const reason = this.unavailable(id);
+    const down = reason === "out of credit" || reason === "at its usage limit";
+    const waited = this.now() - e.askedAt;
+    const busy = this.hub.status(id)?.state === "working";
+    const slow = !busy && waited > this.timeoutMs;
+    if (!down && !slow) {
+      if (!busy && !reason && !e.nudged && waited > this.timeoutMs / 2) {
+        e.nudged = true;
+        this.save();
+        this.planner.notify(id, `HQ is still waiting for your review of PR #${pr.number}. Finish it and call submit_review with prNumber ${pr.number}.`);
+      }
+      return this.view(e);
+    }
+
+    const tried = [...new Set([...e.tried, id])];
+    const author = this.hub.cfg(pr.authorId) ?? null;
+    const { reviewer } = chooseReviewer(this.candidates().filter((c) => c.available && !tried.includes(c.agent.id)), author);
+    const was = this.hub.name(id);
+    if (!reviewer) {
+      if (slow && !e.late) {
+        e.late = true;
+        this.save();
+        const text = `${was} has not reviewed PR #${pr.number} for ${Math.round(waited / 60_000)} minutes${reason ? ` (${reason})` : ""}, and no other reviewer on a different model is free to take it.`;
+        this.hub.activity("agent.needs-input", null, text);
+        this.deps.notice(`PR #${pr.number} is waiting for ${was}`, `${text}\nStart ${was} (or turn on “Reviews PRs” for another agent on a different model), or review it yourself.`);
+      }
+      return this.view(e);
+    }
+    const next: Entry = { ...e, reviewerId: reviewer.id, askedAt: this.now(), tried, nudged: false, late: false };
+    this.entries.set(pr.number, next);
+    this.save();
+    this.hub.activity("config", null, `PR #${pr.number}: ${was} ${down ? `is ${reason}` : `has not answered in ${Math.round(waited / 60_000)} minutes`}, so HQ asked ${reviewer.name} to review it`);
+    this.planner.notify(id, `HQ gave PR #${pr.number} to ${reviewer.name}. Do not review it unless HQ asks you again.`);
+    this.planner.notify(reviewer.id, this.request(pr, false));
     return this.view(next);
   }
 
