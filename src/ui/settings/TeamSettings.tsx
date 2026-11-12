@@ -169,6 +169,14 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
           >
             <Toggle checked={agent.resume !== false} onChange={(v) => set({ resume: v })} label={agent.resume !== false ? "On" : "Off"} />
           </Field>
+          {!agent.isLead && (
+            <Field
+              label="Reviews PRs"
+              hint="This agent reviews the others' pull requests and takes no tasks. Used when Settings → Workflow → Review is Agent review: it must run a different model than the PR's author, so give it another provider or model."
+            >
+              <Toggle checked={!!agent.reviewer} onChange={(v) => set({ reviewer: v })} label={agent.reviewer ? "On" : "Off"} />
+            </Field>
+          )}
           <Field label="Skills" hint="Comma separated. Copied into the agent's .claude/skills.">
             <CommitInput
               className="field"

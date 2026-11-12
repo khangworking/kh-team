@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { makeCommands } from "./commands";
 import { startHttp } from "./http";
 import { Hub } from "./hub";
+import { CrossReview } from "./crossReview";
 import { GitHubSync } from "./githubSync";
 import { Inbox } from "./inbox";
 import { Planner } from "./planner";
@@ -90,6 +91,7 @@ async function main() {
   const limits = new RateLimits(hub, { notify: (id, text) => planner.notify(id, text) });
   sessions.rateLimits = limits;
   const credit = new OutOfCredit(hub, planner, { dirOf: (id) => hub.status(id)?.session.workspace ?? null, notice: (title, details) => void planner.actions?.add("hq", title, details, false) });
+  const cross = new CrossReview(hub, planner, { notice: (title, details) => void planner.actions?.add("hq", title, details, false) });
   budget.refresh();
   setInterval(() => budget.refresh(), 30_000).unref(); // midnight starts a new day
 
@@ -106,6 +108,7 @@ async function main() {
     budget,
     limits,
     credit,
+    cross,
     port,
     browserToken: uiToken,
     agentToken: token,
@@ -115,7 +118,8 @@ async function main() {
   });
   sessions.startPolling();
   sbx.startApprovalPolling();
-  const github = new GitHubSync(hub, planner, repo.github);
+  const github = new GitHubSync(hub, planner, repo.github, cross);
+  cross.onChange = () => github.nudge(1000);
   github.start();
 
   const url = `${uiOrigin}/?token=${uiToken}`;

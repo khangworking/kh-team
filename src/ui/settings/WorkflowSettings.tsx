@@ -8,6 +8,7 @@ const REVIEW_HINT: Record<ReviewTool, string> = {
   coderabbit: "Reads CodeRabbit's check and comments on each PR.",
   greptile: "Reads Greptile's review status and comments.",
   copilot: "Reads GitHub Copilot code review results.",
+  agent: "An agent on a different model than the PR's author reviews it. Turn on \"Reviews PRs\" for an agent in Settings → Team. The reviewer's verdict comes from HQ, because one GitHub account cannot approve its own PRs.",
   human: "A person reviews. HQ waits for an approving GitHub review.",
   custom: "Runs your command; exit code 0 = passed, anything else = changes.",
 };

@@ -8,6 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import type { Hub } from "./hub";
 import { requestAccess } from "./access";
+import type { CrossReview } from "./crossReview";
 import type { Planner } from "./planner";
 
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -26,7 +27,7 @@ function guard<A>(fn: (args: A) => Result) {
   };
 }
 
-function buildServer(hub: Hub, planner: Planner, me: string): McpServer {
+function buildServer(hub: Hub, planner: Planner, me: string, cross?: CrossReview): McpServer {
   const server = new McpServer({ name: "hq", version: "0.1.0" });
   const isLead = !!hub.cfg(me)?.isLead;
   const leadOnly = () => {
@@ -45,12 +46,12 @@ function buildServer(hub: Hub, planner: Planner, me: string): McpServer {
         hub.snap.config.team.map((a) => {
           const st = hub.status(a.id);
           return {
-            id: a.id, name: a.name, role: a.role, lead: a.isLead, you: a.id === me,
+            id: a.id, name: a.name, role: a.role, lead: a.isLead, reviewer: !!a.reviewer, you: a.id === me,
             running: st?.session.state === "running", state: st?.state, task: st?.currentTaskId ?? null,
             // A subscription at its usage limit can't work until then: don't assign it anything.
             limitedUntil: st?.limitedUntil && Date.parse(st.limitedUntil) > Date.now() ? st.limitedUntil : null,
             outOfCredit: st?.outOfCredit ?? null,
-            free: st?.session.state === "running" && !a.isLead && !planner.currentTask(a.id) && !st?.outOfCredit && !(st?.limitedUntil && Date.parse(st.limitedUntil) > Date.now()),
+            free: st?.session.state === "running" && !a.isLead && !a.reviewer && !planner.currentTask(a.id) && !st?.outOfCredit && !(st?.limitedUntil && Date.parse(st.limitedUntil) > Date.now()),
           };
         }),
       ),
@@ -178,6 +179,23 @@ function buildServer(hub: Hub, planner: Planner, me: string): McpServer {
     }),
   );
 
+  // Reviewers answer the reviews HQ asks for (cross-review: a model other than the author's).
+  if (hub.cfg(me)?.reviewer && cross)
+    server.registerTool(
+      "submit_review",
+      {
+        description:
+          "Give HQ your verdict on a PR it asked you to review. Post your findings on the PR first (gh pr review <n> --comment --body …; never --approve or --request-changes, this GitHub account cannot). approve = you would merge it as it is. changes = what must change before it can merge, most important first. HQ tells the author or the lead.",
+        inputSchema: {
+          prNumber: z.number().int(),
+          verdict: z.enum(["approve", "changes"]),
+          summary: z.string().describe("What you found: for changes, each point with file and line; for approve, what you checked"),
+          issues: z.number().int().min(0).optional().describe("How many problems you found that must be fixed"),
+        },
+      },
+      guard(({ prNumber, verdict, summary, issues }: { prNumber: number; verdict: "approve" | "changes"; summary: string; issues?: number }) => ok(cross.submit(me, prNumber, verdict, summary, issues))),
+    );
+
   server.registerTool(
     "ask_user",
     {
@@ -225,8 +243,8 @@ function buildServer(hub: Hub, planner: Planner, me: string): McpServer {
 }
 
 /** Handles one MCP HTTP request for an already-authenticated agent. */
-export async function handleMcp(hub: Hub, planner: Planner, agentId: string, req: IncomingMessage, res: ServerResponse, body: unknown) {
-  const server = buildServer(hub, planner, agentId);
+export async function handleMcp(hub: Hub, planner: Planner, agentId: string, req: IncomingMessage, res: ServerResponse, body: unknown, cross?: CrossReview) {
+  const server = buildServer(hub, planner, agentId, cross);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   res.on("close", () => {
     void transport.close();

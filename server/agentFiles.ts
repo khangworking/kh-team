@@ -103,8 +103,18 @@ export function hqUrl(agent: AgentConfig, port: number): string {
 }
 
 export function roleMd(agent: AgentConfig, cfg: HqConfig, extras: RoleExtras = {}): string {
-  const team = cfg.team.map((a) => `- ${a.name} — ${a.role}${a.isLead ? " (lead)" : ""}${a.id === agent.id ? " ← you" : ""}`).join("\n");
-  const rules = agent.isLead
+  const team = cfg.team.map((a) => `- ${a.name} — ${a.role}${a.isLead ? " (lead)" : a.reviewer ? " (reviews PRs)" : ""}${a.id === agent.id ? " ← you" : ""}`).join("\n");
+  const reviewerRules = [
+    "You review pull requests. You never write or change app code, never push to a PR's branch, and never merge.",
+    "HQ messages you when a PR needs a review. Read it with `gh pr view <n>` and `gh pr diff <n>`, check it out with `gh pr checkout <n>` and run the project's tests, linter or build if it has them, and compare it with its task (list_tasks: the files it may edit and its done-when).",
+    "Look for what would hurt after merge: bugs and missed edge cases, missing or broken tests, security problems (secrets, injection, unchecked input), files outside the task's list, unrelated changes. Do not nitpick style that a formatter would fix.",
+    "Post your findings on the PR with `gh pr review <n> --comment --body \"…\"`, each point with file and line. This GitHub account cannot approve or request changes on its own PRs, so never use --approve or --request-changes.",
+    "Then call submit_review with the PR number, verdict approve (you would merge it as it is) or changes (what must change before it can merge), and a summary. HQ sends your findings to the author. When the author pushes, HQ asks you again: review the new commits and check your earlier points.",
+    "You are chosen because you are a different model from the author. Say what you really find, and do not approve to be agreeable.",
+  ];
+  const rules = agent.reviewer && !agent.isLead
+    ? reviewerRules
+    : agent.isLead
     ? [
         "You plan the work and assign it to the team. You never write app code.",
         "Keep tasks small: one task = one branch = one PR. Give each task the files it may edit and a clear done-when.",
@@ -113,6 +123,7 @@ export function roleMd(agent: AgentConfig, cfg: HqConfig, extras: RoleExtras = {
           ? "You merge PRs once they pass review (`gh pr merge <number> --squash --delete-branch`), one at a time, in an order that avoids conflicts. HQ tells you when each one passes."
           : "The user merges PRs; never merge one yourself. Decide the order they should land in, and tell the user if one blocks another.",
         "If the user changes who merges, HQ tells you. Follow the latest message.",
+        ...(cfg.workflow.review.enabled && cfg.workflow.review.tool === "agent" ? ["Agents marked (reviews PRs) review other agents' PRs, using a different model from the author's. Never assign them tasks; HQ asks them to review each PR and tells you when one passes."] : []),
         "A task with a hold (list_tasks shows it) was put back in todo by HQ, for example because its agent ran out of credit; its note says what was done. Never assign it, never ask anyone to work on it, and never recreate it as a new task. Only the user assigns it again: wait for their instruction.",
       ]
     : [
@@ -133,7 +144,9 @@ export function roleMd(agent: AgentConfig, cfg: HqConfig, extras: RoleExtras = {
     );
   const tools = agent.isLead
     ? "list_workers, get_status, list_tasks, create_board, create_task, update_task, assign_task, send_message, ask_user, request_access"
-    : "get_my_task, set_my_status, list_workers, get_status, list_tasks, send_message, ask_user, request_access";
+    : agent.reviewer
+      ? "submit_review, list_workers, get_status, list_tasks, send_message, ask_user, request_access"
+      : "get_my_task, set_my_status, list_workers, get_status, list_tasks, send_message, ask_user, request_access";
   return [
     `# ${agent.name} — ${agent.role}`,
     "",

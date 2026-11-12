@@ -2,6 +2,7 @@
 // functions that turn the response into PullRequests with a review state.
 
 import type { PullRequest, ReviewState, ReviewTool } from "../src/data/types";
+import type { AgentReview } from "./crossReview";
 import { run } from "./lib/exec";
 
 // ---------------------------------------------------------------- query
@@ -13,7 +14,7 @@ const BASE_FIELDS = "number title url headRefName createdAt mergedAt state merge
 const REVIEW_FIELDS = `
   reviews(last: 10) { nodes { author { login } state submittedAt } }
   reviewThreads(first: 30) { nodes { isResolved isOutdated comments(first: 1) { nodes { author { login } } } } }
-  commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 25) { nodes {
+  commits(last: 1) { nodes { commit { oid statusCheckRollup { contexts(first: 25) { nodes {
     __typename
     ... on CheckRun { name status conclusion }
     ... on StatusContext { context state description }
@@ -69,7 +70,7 @@ export interface GhPr {
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
   reviews: { nodes: { author: { login: string } | null; state: string; submittedAt: string }[] };
   reviewThreads: { nodes: { isResolved: boolean; isOutdated: boolean; comments: { nodes: { author: { login: string } | null }[] } }[] };
-  commits: { nodes: { commit: { statusCheckRollup: { contexts: { nodes: Ctx[] } } | null } }[] };
+  commits: { nodes: { commit: { oid?: string; statusCheckRollup: { contexts: { nodes: Ctx[] } } | null } }[] };
 }
 
 type Ctx =
@@ -110,7 +111,7 @@ export async function fetchPrs(repo: string): Promise<{ open: GhPr[]; merged: Gh
 // ---------------------------------------------------------------- review state
 
 /** Each review tool's bot logins and status/check name. */
-const BOTS: Record<Exclude<ReviewTool, "human" | "custom">, { logins: string[]; check: RegExp; label: string }> = {
+const BOTS: Record<Exclude<ReviewTool, "human" | "custom" | "agent">, { logins: string[]; check: RegExp; label: string }> = {
   coderabbit: { logins: ["coderabbitai", "coderabbitai[bot]"], check: /coderabbit/i, label: "CodeRabbit" },
   greptile: { logins: ["greptile-apps", "greptile-apps[bot]"], check: /greptile/i, label: "Greptile" },
   copilot: { logins: ["copilot-pull-request-reviewer", "copilot-pull-request-reviewer[bot]", "Copilot"], check: /copilot/i, label: "Copilot" },
@@ -126,7 +127,14 @@ const contexts = (pr: GhPr): Ctx[] => pr.commits.nodes[0]?.commit.statusCheckRol
 const openThreads = (pr: GhPr, logins?: string[]) =>
   pr.reviewThreads.nodes.filter((t) => !t.isResolved && !t.isOutdated && (!logins || logins.includes(t.comments.nodes[0]?.author?.login ?? ""))).length;
 
-export function reviewOf(pr: GhPr, tool: ReviewTool): ReviewResult {
+export function reviewOf(pr: GhPr, tool: ReviewTool, agent?: AgentReview): ReviewResult {
+  if (tool === "agent") {
+    // A reviewing agent of another model (crossReview.ts): its verdict lives in HQ, not on GitHub.
+    if (!agent) return { review: "pending", openComments: 0, note: "Waiting for a reviewer" };
+    if (agent.state === "approved") return { review: "passed", openComments: 0, note: null };
+    if (agent.state === "changes" || agent.state === "stuck") return { review: "changes-requested", openComments: agent.issues, note: agent.note };
+    return { review: agent.state === "reviewing" ? "reviewing" : "pending", openComments: 0, note: agent.note };
+  }
   if (tool === "custom") return { review: "pending", openComments: openThreads(pr), note: "Custom review checks aren't run by HQ yet" };
 
   if (tool === "human") {
@@ -175,10 +183,10 @@ export function branchAgent(branch: string): string | null {
   return m ? m[1].toLowerCase() : null;
 }
 
-export function toPullRequest(pr: GhPr, tool: ReviewTool, reviewEnabled: boolean, taskId: string, authorId: string): PullRequest {
+export function toPullRequest(pr: GhPr, tool: ReviewTool, reviewEnabled: boolean, taskId: string, authorId: string, agent?: AgentReview): PullRequest {
   const merged = pr.state === "MERGED";
   // A draft is work in progress (an agent saving its work before a usage limit): not reviewed, never "passed".
-  const r = pr.isDraft ? { review: "pending" as ReviewState, openComments: 0, note: "Draft: work in progress" } : reviewEnabled ? reviewOf(pr, tool) : { review: "passed" as ReviewState, openComments: 0, note: null };
+  const r = pr.isDraft ? { review: "pending" as ReviewState, openComments: 0, note: "Draft: work in progress" } : reviewEnabled ? reviewOf(pr, tool, agent) : { review: "passed" as ReviewState, openComments: 0, note: null };
   return {
     number: pr.number,
     title: pr.title,

@@ -37,6 +37,8 @@ export const defaultSandbox = (): SandboxSettings => ({
 });
 
 export function newAgent(id: string, name: string, role: string, color: string, isLead: boolean): AgentConfig {
+  // A role called "Reviewer" makes a reviewing agent: it checks PRs and builds nothing.
+  const reviewer = !isLead && /^review/i.test(role.trim());
   return {
     id,
     name,
@@ -51,11 +53,14 @@ export function newAgent(id: string, name: string, role: string, color: string, 
     skills: [],
     roleMd: isLead
       ? `You are ${name}, the lead. You plan and assign work. You never write app code.`
-      : `You are ${name}, a ${role.toLowerCase()} on the team. You build the tasks assigned to you.`,
+      : reviewer
+        ? `You are ${name}, a reviewer on the team. You review pull requests written by the others and never write app code.`
+        : `You are ${name}, a ${role.toLowerCase()} on the team. You build the tasks assigned to you.`,
     sandbox: defaultSandbox(),
     workspacePath: null,
     mcp: [],
     resume: true,
+    reviewer,
   };
 }
 
@@ -82,6 +87,7 @@ export function loadConfig(repo: RepoInfo, port: number): { config: HqConfig; is
       a.workspacePath ??= null;
       a.mcp ??= [];
       a.resume ??= true;
+      a.reviewer ??= false;
       a.cli ??= "claude";
       if ((a.cli as string) === "pi") a.cli = "opencode"; // Pi was tried in P0, then OpenCode came back
       a.mode = "sandbox"; // every agent runs in its own Docker Sandbox
