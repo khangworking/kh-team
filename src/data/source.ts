@@ -35,6 +35,7 @@ export type OfficeEvent =
   | { type: "setup.updated"; setup: SetupState }
   | { type: "sbx.updated"; sbx: SbxState }
   | { type: "providerKeys.updated"; providers: ProviderId[] }
+  | { type: "models.updated"; models: Partial<Record<ProviderId, string[]>> }
   | { type: "budget.updated"; budget: BudgetState }
   | { type: "rateLimits.updated"; limits: AgentLimit[] }
   | { type: "workspace.info"; info: WorkspaceInfo }

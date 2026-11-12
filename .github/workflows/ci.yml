@@ -44,6 +44,8 @@ jobs:
         run: npx tsx scripts/cross-review-test.ts
       - name: Branches deleted on GitHub
         run: npx tsx scripts/branch-cleanup-test.ts
+      - name: Model lists and provider keys
+        run: npx tsx scripts/models-test.ts
       - name: Pack
         shell: bash
         run: mkdir -p pack && npm pack --ignore-scripts --pack-destination pack

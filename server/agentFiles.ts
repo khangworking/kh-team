@@ -20,6 +20,8 @@ export const HQ_FILES = [ROLE_FILE, ".claude/settings.local.json", MCP_CONFIG, H
 export interface RoleExtras {
   ownRole?: string | null;
   hasEnvFile?: boolean;
+  /** The newest Anthropic model id of a family ("opus", "sonnet", "haiku") the provider offers now, for OpenCode. */
+  claudeLatest?: (family: string) => string | null;
 }
 
 /** HQ ≤ 0.3 wrote its role to ROLE.md; recognise that so it can be cleaned up. */

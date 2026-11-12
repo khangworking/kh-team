@@ -18,12 +18,15 @@ export interface ProviderInfo {
   sandboxHosts?: string[];
   /** Anthropic-compatible endpoint, so Claude Code can run on it. */
   anthropicBaseUrl?: string;
-  /** Suggested model ids (as the CLI expects them). */
+  /** Suggested model ids (as the CLI expects them). The fallback when the provider's own list can't be fetched. */
   models: string[];
+  /** What an agent starts with when no model is chosen and the CLI has no default of its own (OpenCode). Defaults to models[0]. */
+  defaultModel?: string;
 }
 
 export const PROVIDER_INFO: Record<ProviderId, ProviderInfo> = {
-  anthropic: { label: "Anthropic (Claude)", keyVar: "ANTHROPIC_API_KEY", clis: ["claude", "opencode"], models: ["opus", "sonnet", "haiku"] },
+  // Sonnet, not Opus, when OpenCode has no model chosen: a forgotten setting shouldn't be the most expensive one.
+  anthropic: { label: "Anthropic (Claude)", keyVar: "ANTHROPIC_API_KEY", clis: ["claude", "opencode"], models: ["opus", "sonnet", "haiku"], defaultModel: "sonnet" },
   openai: { label: "OpenAI (GPT)", keyVar: "OPENAI_API_KEY", clis: ["codex", "opencode"], models: [] },
   google: { label: "Google (Gemini)", keyVar: "GEMINI_API_KEY", clis: ["opencode"], models: ["gemini-2.5-pro", "gemini-2.5-flash"] },
   deepseek: {
@@ -53,3 +56,26 @@ export function normalizeAuth(cli: AgentCli, auth: AgentAuth | undefined, provid
 }
 
 export const isProvider = (v: unknown): v is ProviderId => typeof v === "string" && (PROVIDERS as readonly string[]).includes(v);
+
+/**
+ * Whether `model` is one of `list` (the provider's own model ids). Providers list dated ids ("claude-haiku-4-5-20251001",
+ * "gpt-5-2025-08-07") but accept the short alias too, and Ollama lists "qwen3:8b" and accepts "qwen3": those count.
+ */
+export function modelListed(list: readonly string[], model: string): boolean {
+  const m = model.trim().toLowerCase();
+  return list.some((id) => {
+    const l = id.toLowerCase();
+    return l === m || l.startsWith(`${m}-`) || l === `${m}:latest` || l.startsWith(`${m}:`) || l === `models/${m}`;
+  });
+}
+
+/** The provider's key can be kept by sbx's proxy instead of entering the agent's sandbox: sbx service name, by CLI and provider. */
+const PROXY_SERVICE: Partial<Record<AgentCli, Partial<Record<ProviderId, string>>>> = {
+  // Verified: a Claude Code sandbox with only an `anthropic` secret (no key variable) answers.
+  claude: { anthropic: "anthropic" },
+  // Not turned on yet: Codex + OpenAI (documented, no key to test with), and OpenCode, which sbx treats as a third-party kit
+  // that needs an approved binding in ~/.config/sbx/credentials.yaml before the proxy injects anything.
+};
+
+/** The sbx secret service that carries this CLI's key for this provider, or null when the key goes in as a variable. */
+export const proxyService = (cli: AgentCli, provider: ProviderId): string | null => PROXY_SERVICE[cli]?.[provider] ?? null;

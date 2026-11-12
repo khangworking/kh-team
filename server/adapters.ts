@@ -141,18 +141,22 @@ function opencodeProviders(agent: AgentConfig): Record<string, unknown> {
 
 /**
  * Claude Code takes "opus", "sonnet" and "haiku" as model names; OpenCode only knows full ids ("Model unavailable:
- * anthropic/opus"). Those three, and nothing else, are turned into the current ids.
+ * anthropic/opus"). Those three, and nothing else, are turned into an id: the newest of that family the provider
+ * lists now (`latest`), or, when HQ has no list, these, which are only as new as this release.
  */
-const OPENCODE_ANTHROPIC_IDS: Record<string, string> = { opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5" };
+const OPENCODE_ANTHROPIC_FALLBACK: Record<string, string> = { opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5" };
 
 /** The model OpenCode starts with for this agent ("" = OpenCode's own choice). */
-export function opencodeModel(agent: Pick<AgentConfig, "provider" | "model">): string {
-  const chosen = agent.model.trim() || PROVIDER_INFO[agent.provider].models[0] || "";
-  return agent.provider === "anthropic" ? (OPENCODE_ANTHROPIC_IDS[chosen.toLowerCase()] ?? chosen) : chosen;
+export function opencodeModel(agent: Pick<AgentConfig, "provider" | "model">, latest?: (family: string) => string | null): string {
+  const info = PROVIDER_INFO[agent.provider];
+  const chosen = agent.model.trim() || info.defaultModel || info.models[0] || "";
+  if (agent.provider !== "anthropic") return chosen;
+  const family = chosen.toLowerCase();
+  return OPENCODE_ANTHROPIC_FALLBACK[family] ? (latest?.(family) ?? OPENCODE_ANTHROPIC_FALLBACK[family]) : chosen;
 }
 
-export function opencodeConfig(agent: AgentConfig, cfg: HqConfig, token: string, dir: string): Record<string, unknown> {
-  const model = opencodeModel(agent);
+export function opencodeConfig(agent: AgentConfig, cfg: HqConfig, token: string, dir: string, latest?: (family: string) => string | null): Record<string, unknown> {
+  const model = opencodeModel(agent, latest);
   return {
     $schema: "https://opencode.ai/config.json",
     ...(model ? { model: `${agent.provider}/${model}` } : {}),
@@ -173,7 +177,7 @@ const opencode: CliAdapter = {
     if (tracked.ok) throw new Error(`This repo commits ${OPENCODE_CONFIG}, so HQ can't add its OpenCode settings without changing a tracked file. Use Claude Code or Codex for this agent, or remove that file from the repo.`);
     const ownRole = await adoptRoleFile(dir);
     agentWrite(dir, ROLE_FILE, roleMd(agent, cfg, { ...extras, ownRole }));
-    agentWrite(dir, OPENCODE_CONFIG, JSON.stringify(opencodeConfig(agent, cfg, token, dir), null, 2) + "\n", { mode: 0o600 });
+    agentWrite(dir, OPENCODE_CONFIG, JSON.stringify(opencodeConfig(agent, cfg, token, dir, extras.claudeLatest), null, 2) + "\n", { mode: 0o600 });
     agentWrite(dir, `${OPENCODE_PLUGIN}/index.ts`, opencodePluginSource({ hqUrl: hqUrl(agent, cfg.project.hqPort), token, agentId: agent.id }), { mode: 0o600 });
     excludeFromGit(dir, [ROLE_FILE, OPENCODE_CONFIG, `${OPENCODE_PLUGIN}/`]);
   },

@@ -39,7 +39,7 @@ assert.equal(shouldResume(agent("claude", { mode: "local" }), "claude"), false);
 
 // OpenCode does not know Claude Code's model names: "anthropic/opus" is "Model unavailable". Full ids pass through.
 const oc = (patch: Partial<AgentConfig>) => agent("opencode", { auth: "apiKey", ...patch });
-assert.equal(opencodeModel(oc({ provider: "anthropic", model: "" })), "claude-opus-5-5", "the default for Anthropic is no longer the bare alias");
+assert.equal(opencodeModel(oc({ provider: "anthropic", model: "" })), "claude-sonnet-5-5", "the default for Anthropic is Sonnet, as an id and not the bare alias");
 assert.equal(opencodeModel(oc({ provider: "anthropic", model: "sonnet" })), "claude-sonnet-5-5");
 assert.equal(opencodeModel(oc({ provider: "anthropic", model: "Haiku" })), "claude-haiku-5-5");
 assert.equal(opencodeModel(oc({ provider: "anthropic", model: "claude-haiku-4-5" })), "claude-haiku-4-5", "a full id is left alone");

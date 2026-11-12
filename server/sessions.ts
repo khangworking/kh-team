@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { stackSkills } from "../src/data/stack";
 import { hasHqSkills, prepareSkills } from "./skills";
 import { resolve, sep } from "node:path";
-import { CLI_LABEL, HOST_TERMINAL, type AgentCli, type SetupCheckId, type WorkspaceInfo } from "../src/data/types";
+import { CLI_LABEL, HOST_TERMINAL, type AgentCli, type AgentConfig, type SetupCheckId, type WorkspaceInfo } from "../src/data/types";
 import { PROVIDER_INFO } from "../src/data/providers";
 import { adapters, localBinary, shouldResume } from "./adapters";
 import type { Hub } from "./hub";
@@ -68,6 +68,12 @@ export class Sessions {
   envFileFor: (agentId: string) => string | null = () => null;
   /** API-key agents: an env file with just their provider's key (throws when it's missing). */
   providerEnvFor: (agentId: string) => string | null = () => null;
+  /** Why this agent's model can't be used (the provider doesn't offer it), or null. */
+  modelProblem: (agent: AgentConfig) => Promise<string | null> = async () => null;
+  /** The newest Anthropic model id of a family the provider's list has (OpenCode doesn't know Claude Code's short names). */
+  claudeLatest: (family: string) => string | null = () => null;
+  /** Hands an agent's provider key to sbx's proxy (and takes back what it no longer needs) before its sandbox starts. */
+  syncProxyKey: (agent: AgentConfig) => Promise<void> = async () => {};
   /** True when the daily budget is used up and this agent uses an API key. */
   budgetBlocks: (agentId: string) => boolean = () => false;
   /** Subscription usage limits (Codex shows its limit on screen; HQ reads it there). */
@@ -114,13 +120,16 @@ export class Sessions {
     const name = this.name(id);
     this.onSessionDown(id);
     try {
+      hub.setSession(id, { state: "starting", detail: "Checking the model…" });
+      const modelProblem = await this.modelProblem(agent);
+      if (modelProblem) return fail(modelProblem);
       hub.setSession(id, { state: "starting", detail: "Preparing folder…", workspace: workspaceFor(agent, hub.slug) });
       const dir = await ensureWorkspace(agent, hub.slug, hub.repo);
       this.branchCleanup?.request();
       const adapter = adapters[agent.cli];
       // App variables reach the agent in sandbox mode and in Local mode with tmux (not Local on Windows).
       const hasEnvFile = !!this.envFileFor(id) && (agent.mode === "sandbox" || this.backend.persistent);
-      await adapter.writeFiles(dir, agent, hub.snap.config, this.agentToken, { hasEnvFile });
+      await adapter.writeFiles(dir, agent, hub.snap.config, this.agentToken, { hasEnvFile, claudeLatest: this.claudeLatest });
       const specs = stackSkills(hub.snap.config.stack);
       if (specs.length || hasHqSkills(hub.slug, dir)) {
         hub.setSession(id, { detail: "Installing agent skills…" });
@@ -165,6 +174,8 @@ export class Sessions {
             hub.activity("session", id, `${agent.name}'s CLI changed from ${existing} to ${launch.sbxAgent}: HQ replaced its sandbox. The folder was kept.`);
             existing = null;
           }
+          // The provider key goes to sbx's proxy, not into the sandbox (and a key the agent no longer needs is taken back).
+          await this.syncProxyKey(agent);
           const isNew = !existing;
           const size = !isNew ? [] : [...(cpus ? ["--cpus", String(cpus)] : []), ...(memoryGb ? ["--memory", `${Math.round(memoryGb * 1024)}m`] : [])];
           // The provider key enters the VM as a variable: the sandbox, not the key, is the boundary.

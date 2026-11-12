@@ -390,6 +390,8 @@ export interface OfficeSnapshot {
   actionItems?: ActionItem[];
   /** Providers whose key is in the office's provider keys file (names only, never values). */
   providerKeys?: ProviderId[];
+  /** Model ids each provider offers right now (newest first), asked of the provider. A provider missing here has no live list: the UI uses its built-in suggestions. */
+  models?: Partial<Record<ProviderId, string[]>>;
   /** Today's spend by agents that use an API key, against the office's daily limit. */
   budget?: BudgetState;
   /** Usage limits of the subscriptions the team uses. */
