@@ -26,8 +26,8 @@ const arr = (v: unknown): Obj[] => (Array.isArray(v) ? (v.filter((x) => x && typ
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const byNewest = (field: string) => (a: Obj, b: Obj) => (Number(b[field]) || Date.parse(str(b[field])) || 0) - (Number(a[field]) || Date.parse(str(a[field])) || 0);
 
-/** OpenAI's list has everything the key can call; keep what an agent can chat or code with. */
-const OPENAI_NOT_CHAT = /embedding|whisper|tts|dall-e|image|audio|realtime|transcribe|moderation|search|computer-use|davinci|babbage|instruct$/i;
+/** The lists have everything the key can call (speech, images, embeddings, robots…); keep what an agent can chat or code with. */
+const NOT_FOR_AGENTS = /embedding|whisper|tts|dall-e|image|imagen|veo|audio|live|realtime|transcribe|moderation|search|computer-use|robotics|aqa|davinci|babbage|instruct$/i;
 
 export const ENDPOINTS: Record<ProviderId, Endpoint> = {
   anthropic: {
@@ -42,7 +42,7 @@ export const ENDPOINTS: Record<ProviderId, Endpoint> = {
       arr((j as Obj)?.data)
         .sort(byNewest("created"))
         .map((m) => str(m.id))
-        .filter((id) => /^(gpt-|o\d|codex|chatgpt)/i.test(id) && !OPENAI_NOT_CHAT.test(id)),
+        .filter((id) => /^(gpt-|o\d|codex|chatgpt)/i.test(id) && !NOT_FOR_AGENTS.test(id)),
   },
   google: {
     url: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000",
@@ -51,7 +51,7 @@ export const ENDPOINTS: Record<ProviderId, Endpoint> = {
       arr((j as Obj)?.models)
         .filter((m) => !Array.isArray(m.supportedGenerationMethods) || (m.supportedGenerationMethods as unknown[]).includes("generateContent"))
         .map((m) => str(m.name).replace(/^models\//, ""))
-        .filter((id) => /^gemini/i.test(id))
+        .filter((id) => /^gemini/i.test(id) && !NOT_FOR_AGENTS.test(id))
         .reverse(), // the API lists oldest first
   },
   deepseek: {

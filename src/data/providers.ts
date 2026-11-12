@@ -71,10 +71,12 @@ export function modelListed(list: readonly string[], model: string): boolean {
 
 /** The provider's key can be kept by sbx's proxy instead of entering the agent's sandbox: sbx service name, by CLI and provider. */
 const PROXY_SERVICE: Partial<Record<AgentCli, Partial<Record<ProviderId, string>>>> = {
-  // Verified: a Claude Code sandbox with only an `anthropic` secret (no key variable) answers.
-  claude: { anthropic: "anthropic" },
-  // Not turned on yet: Codex + OpenAI (documented, no key to test with), and OpenCode, which sbx treats as a third-party kit
-  // that needs an approved binding in ~/.config/sbx/credentials.yaml before the proxy injects anything.
+  // Verified: a Claude Code sandbox with only an `anthropic` secret (no key variable) answers; on OpenRouter's Anthropic-compatible
+  // endpoint with a placeholder token it answers with the stored key, and a wrong stored key makes it fail.
+  claude: { anthropic: "anthropic", openrouter: "openrouter" },
+  // Not turned on: OpenCode, which sbx treats as a third-party kit that needs an approved binding in
+  // ~/.config/sbx/credentials.yaml before the proxy injects anything; and Codex + OpenAI, whose sbx sandbox is set up for the
+  // ChatGPT sign-in (requests go to chatgpt.com, which refuses API keys), so Codex keeps the key as a variable.
 };
 
 /** The sbx secret service that carries this CLI's key for this provider, or null when the key goes in as a variable. */

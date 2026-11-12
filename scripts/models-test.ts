@@ -31,6 +31,9 @@ const agent = (o: Partial<Agent> = {}): Agent => ({ id: "kevin", name: "Kevin", 
   const google = { models: [{ name: "models/gemini-2.5-flash", supportedGenerationMethods: ["generateContent"] }, { name: "models/embedding-001", supportedGenerationMethods: ["embedContent"] }, { name: "models/gemini-3-pro", supportedGenerationMethods: ["generateContent"] }] };
   assert.deepEqual(ENDPOINTS.google.parse(google), ["gemini-3-pro", "gemini-2.5-flash"], "the prefix is dropped, newest (listed last) first");
 
+  const gem = { models: [{ name: "models/gemini-3.8-flash", supportedGenerationMethods: ["generateContent"] }, { name: "models/gemini-3.8-flash-tts", supportedGenerationMethods: ["generateContent"] }, { name: "models/gemini-robotics-er-2-preview", supportedGenerationMethods: ["generateContent"] }, { name: "models/gemini-2.5-computer-use-preview-10-2025", supportedGenerationMethods: ["generateContent"] }] };
+  assert.deepEqual(ENDPOINTS.google.parse(gem), ["gemini-3.8-flash"], "speech, robotics and computer-use models are not for agents");
+  assert.deepEqual(ENDPOINTS.openai.parse({ data: [{ id: "gpt-live-1", created: 2 }, { id: "gpt-6", created: 1 }] }), ["gpt-6"]);
   assert.deepEqual(ENDPOINTS.deepseek.parse({ data: [{ id: "deepseek-v4-pro" }, { id: "deepseek-flash" }] }), ["deepseek-v4-pro", "deepseek-flash"]);
   assert.deepEqual(ENDPOINTS.openrouter.parse({ data: [{ id: "a/old", created: 1 }, { id: "b/new", created: 2 }] }), ["b/new", "a/old"]);
   assert.deepEqual(ENDPOINTS.ollama.parse({ models: [{ name: "qwen3:8b" }, { name: "llama3.2:latest" }] }), ["qwen3:8b", "llama3.2:latest"]);
@@ -184,21 +187,27 @@ const make = (slug: string, file = cacheFile) => {
 // ---------------------------------------------------------------- keys kept by sbx's proxy
 {
   assert.equal(proxyService("claude", "anthropic"), "anthropic");
+  assert.equal(proxyService("claude", "openrouter"), "openrouter", "Claude Code on OpenRouter's Anthropic endpoint");
   assert.equal(proxyService("claude", "deepseek"), null, "DeepSeek has no sbx service: its key stays a variable");
   assert.equal(proxyService("opencode", "anthropic"), null, "OpenCode needs an approved binding in sbx first");
+  assert.equal(proxyService("opencode", "google"), null);
   assert.equal(proxyService("codex", "openai"), null);
 
   const hub = { slug: "proxy", snap: {}, emit() {}, cfg: () => undefined } as never;
   const keyFile = join(home, ".jsmhq", "proxy", "providers.env");
   const keys = new ProviderKeys(hub);
   keys.ensureFile();
-  writeFileSync(keyFile, "ANTHROPIC_API_KEY=sk-ant-live\nDEEPSEEK_API_KEY=sk-ds-live\nOPENAI_API_KEY=\n");
+  writeFileSync(keyFile, "ANTHROPIC_API_KEY=sk-ant-live\nDEEPSEEK_API_KEY=sk-ds-live\nOPENROUTER_API_KEY=sk-or-live\nOPENAI_API_KEY=\n");
   assert.equal(keys.keyFor("anthropic"), "sk-ant-live");
   assert.equal(keys.keyFor("openai"), null);
   assert.equal(keys.keyFor("ollama"), null);
 
   // The key of an agent whose key sbx holds is not written for its sandbox; other agents still get theirs.
   assert.equal(keys.launchEnv(agent() as never), null, "Claude + Anthropic key: nothing enters the sandbox");
+  const orEnv = readFileSync(keys.launchEnv(agent({ id: "or", provider: "openrouter", model: "anthropic/claude-haiku-5.5" }) as never)!, "utf8");
+  assert.match(orEnv, /ANTHROPIC_BASE_URL=https:\/\/openrouter\.ai\/api/);
+  assert.match(orEnv, /ANTHROPIC_AUTH_TOKEN=proxy-managed/, "a placeholder, because Claude Code insists on a token");
+  assert.ok(!orEnv.includes("sk-or-live"), "the OpenRouter key stays with sbx");
   const dsEnv = keys.launchEnv(agent({ id: "ds", provider: "deepseek", model: "deepseek-v4-pro" }) as never)!;
   assert.match(readFileSync(dsEnv, "utf8"), /ANTHROPIC_AUTH_TOKEN=sk-ds-live/);
   const ocEnv = keys.launchEnv(agent({ id: "oc", cli: "opencode" }) as never)!;

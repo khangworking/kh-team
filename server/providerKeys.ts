@@ -91,17 +91,18 @@ export class ProviderKeys {
     const key = info.keyVar ? this.read().get(info.keyVar)?.trim() : "";
     if (info.keyVar && !key) throw new Error(`No ${info.label} key. Add ${info.keyVar} in Settings → Team → Provider keys, then start ${agent.name} again.`);
     const env: Record<string, string> = {};
-    // sbx's proxy holds this key (ProxyKeys): nothing about it enters the sandbox.
-    if (proxyService(agent.cli, agent.provider)) return null;
+    // When sbx's proxy holds the key (ProxyKeys), the sandbox gets a placeholder where the CLI insists on one, never the key.
+    const viaProxy = !!proxyService(agent.cli, agent.provider);
     if (agent.cli === "claude") {
       if (info.anthropicBaseUrl) {
         // Claude Code on an Anthropic-compatible endpoint (DeepSeek, OpenRouter).
         env.ANTHROPIC_BASE_URL = info.anthropicBaseUrl;
-        env.ANTHROPIC_AUTH_TOKEN = key!;
+        env.ANTHROPIC_AUTH_TOKEN = viaProxy ? "proxy-managed" : key!;
         env.ANTHROPIC_API_KEY = "";
         if (agent.model.trim()) env.ANTHROPIC_MODEL = env.ANTHROPIC_SMALL_FAST_MODEL = agent.model.trim();
-      } else env.ANTHROPIC_API_KEY = key!;
-    } else if (info.keyVar) env[info.keyVar] = key!;
+      } else if (!viaProxy) env.ANTHROPIC_API_KEY = key!;
+    } else if (info.keyVar && !viaProxy) env[info.keyVar] = key!;
+    if (!Object.keys(env).length) return null;
     writeFileSync(file, Object.entries(env).map(([k, v]) => `${k}=${v}`).join("\n") + "\n", { mode: 0o600 });
     return file;
   }
