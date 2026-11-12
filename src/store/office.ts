@@ -174,6 +174,7 @@ export const officeActions = {
   stopAgent: (id: string) => source.stopAgent(id),
   openWorkspace: (id: string) => source.openWorkspace(id),
   recreateSandbox: (id: string) => source.recreateSandbox(id),
+  upgradeCli: (id: string) => source.upgradeCli(id),
   openShell: (id: string) => source.openShell(id),
   closeShell: (id: string) => source.closeShell(id),
   openHostShell: (dir: string, fresh?: boolean) => source.openHostShell(dir, fresh),

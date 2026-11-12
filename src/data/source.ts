@@ -99,6 +99,8 @@ export interface OfficeDataSource {
   unforwardPort(agentId: string, port: number): void;
   /** Removes and recreates the agent's sandbox (e.g. to apply new CPU/memory). The folder is kept. */
   recreateSandbox(id: string): void;
+  /** Installs the newest release of the agent's coding CLI in its (running) sandbox. Takes effect when the agent next starts. */
+  upgradeCli(id: string): void;
 
   // setup checklist
   recheckSetup(): void;

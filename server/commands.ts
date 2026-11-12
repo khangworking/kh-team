@@ -11,6 +11,7 @@ import { agentPalette } from "../src/theme/tokens";
 import { Hub } from "./hub";
 import type { Inbox } from "./inbox";
 import type { Planner } from "./planner";
+import type { CliVersions } from "./cliVersions";
 import type { ProviderKeys } from "./providerKeys";
 import type { Budget } from "./budget";
 import { MAX_DAILY_BUDGET_USD } from "../src/data/budget";
@@ -49,7 +50,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 const str = (v: unknown, max = 2000) => (typeof v === "string" ? v.slice(0, max) : "");
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inbox: Inbox, sbx: Sbx, mcp: SbxMcp, keys: ProviderKeys, budget: Budget) {
+export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inbox: Inbox, sbx: Sbx, mcp: SbxMcp, keys: ProviderKeys, budget: Budget, cliVersions: CliVersions) {
   /** Runs an sbx change and reports failures in the activity feed. */
   const attempt = async (agentId: string | null, what: string, fn: () => Promise<void>) => {
     try {
@@ -76,6 +77,7 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
     stopAgent: (id) => sessions.stop(str(id, 80)),
     openWorkspace: (id) => sessions.openWorkspace(str(id, 80)),
     recreateSandbox: (id) => sessions.recreate(str(id, 80)),
+    upgradeCli: async (id) => void (await cliVersions.upgrade(str(id, 80))),
     recheckSetup: async () => {
       await sessions.recheckSetup();
       await sbx.refresh();
