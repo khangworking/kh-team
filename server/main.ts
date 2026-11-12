@@ -16,7 +16,8 @@ import { GitHubSync } from "./githubSync";
 import { Inbox } from "./inbox";
 import { Planner } from "./planner";
 import { ActionItems } from "./actionItems";
-import { ProviderKeys } from "./providerKeys";
+import { ModelCatalog } from "./modelCatalog";
+import { ProviderKeys, ProxyKeys } from "./providerKeys";
 import { Budget } from "./budget";
 import { OutOfCredit } from "./outOfCredit";
 import { RateLimits } from "./rateLimits";
@@ -25,7 +26,7 @@ import { SbxMcp } from "./sbxMcp";
 import { run } from "./lib/exec";
 import { log } from "./lib/log";
 import { ensurePtyHelperExecutable } from "./lib/ptyFix";
-import { agentToken, browserToken } from "./paths";
+import { agentToken, browserToken, sessionName } from "./paths";
 import { detectRepo } from "./repo";
 import { Sessions } from "./sessions";
 import { runSetupChecks } from "./setup";
@@ -69,6 +70,15 @@ async function main() {
     const agent = hub.cfg(id);
     return agent ? keys.launchEnv(agent) : null;
   };
+  const models = new ModelCatalog(hub, (p) => keys.keyFor(p));
+  hub.snap.models = models.snapshot();
+  void models.refresh();
+  setInterval(() => void models.refresh(), 30 * 60_000).unref(); // only the lists older than their TTL are asked again
+  keys.onChange = () => void models.refresh(true);
+  sessions.modelProblem = (agent) => models.problem(agent);
+  sessions.claudeLatest = (family) => models.latestClaude(family);
+  const proxyKeys = new ProxyKeys(hub, keys, (id) => sessionName(slug, id));
+  sessions.syncProxyKey = (agent) => proxyKeys.sync(agent);
   const mcp = new SbxMcp(hub, (id, file, args, onExit) => sessions.runTerminal(id, file, args, onExit));
   sessions.onSandboxReady = (id) => {
     void sbx.syncRules(id);
@@ -80,6 +90,7 @@ async function main() {
     void sbx.refreshPorts(id);
   })(sessions.onSessionDown);
   sessions.onSandboxRemoved = (id) => {
+    void proxyKeys.release(id);
     mcp.forget(id);
     void sbx.refreshPorts(id);
   };

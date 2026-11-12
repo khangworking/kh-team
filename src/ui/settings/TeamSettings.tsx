@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { nextAgentName } from "../../data/names";
-import { normalizeAuth, PROVIDER_INFO, PROVIDERS, providersFor, SUBSCRIPTION_PROVIDER, type ProviderId } from "../../data/providers";
+import { modelListed, normalizeAuth, PROVIDER_INFO, PROVIDERS, providersFor, SUBSCRIPTION_PROVIDER, type ProviderId } from "../../data/providers";
 import { CLI_LABEL, type AgentAuth, type AgentCli, type AgentConfig, type AgentMode } from "../../data/types";
 import { officeActions, useOffice } from "../../store/office";
 import { agentPalette } from "../../theme/tokens";
@@ -53,7 +53,7 @@ function ProviderKeysSection({ team }: { team: AgentConfig[] }) {
     <section className="border-[3px] border-ink bg-white p-3">
       <SectionTitle>Provider keys</SectionTitle>
       <p className="mb-2 text-[14px] text-muted">
-        API-key agents get their key from this office's keys file when their sandbox starts: each agent only its own provider's key, as a variable inside its sandbox. Subscription agents sign in inside their own terminal instead.
+        API-key agents get their key from this office's keys file when their sandbox starts, each agent only its own provider's key. Claude Code agents on an Anthropic key never hold it: sbx's proxy keeps it on this machine and adds it to their requests. The other agents (Codex, OpenCode, DeepSeek) get it as a variable inside their sandbox. HQ also asks each provider with a key for its current model list. Subscription agents sign in inside their own terminal instead.
       </p>
       <div className="mb-2 flex flex-wrap gap-1.5">
         {PROVIDERS.filter((p) => PROVIDER_INFO[p].keyVar).map((p) => {
@@ -102,6 +102,10 @@ export function TeamSettings() {
 
 function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig; expanded: boolean; onToggle: () => void; onRemove: () => void }) {
   const set = (patch: Parameters<typeof officeActions.updateAgent>[1]) => officeActions.updateAgent(agent.id, patch);
+  const liveModels = useOffice((s) => s.snap?.models?.[agent.provider]);
+  const model = agent.model.trim();
+  // A list the provider itself gave: a model it doesn't have would stop the agent from starting.
+  const unknownModel = agent.auth === "apiKey" && !!model && !/^(default|opus|sonnet|haiku)$/i.test(model) && !!liveModels && !modelListed(liveModels, model);
   return (
     <div className="border-[3px] border-ink bg-white">
       <div className="grid grid-cols-[40px_1fr_1fr_120px_170px_100px_auto] items-end gap-2.5 p-2.5">
@@ -154,11 +158,18 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
               ))}
             </div>
           </Field>
-          <Field label="Start with model" hint="Optional. Leave empty to use the CLI's default — you can always switch with /model in the terminal. Set it to keep a choice across restarts (e.g. Opus for the lead).">
+          <Field
+            label="Start with model"
+            hint={`Optional. Leave empty to use the CLI's default — you can always switch with /model in the terminal. Set it to keep a choice across restarts (e.g. Opus for the lead). With an API key the suggestions are the provider's own current list.${unknownModel ? ` ⚠ ${PROVIDER_INFO[agent.provider].label} doesn't offer "${model}", so this agent won't start until it is changed.` : ""}`}
+          >
             <CommitInput
               className="field"
               value={agent.model}
-              placeholder={agent.auth === "apiKey" && PROVIDER_INFO[agent.provider].models[0] ? PROVIDER_INFO[agent.provider].models[0] : `${CLI_LABEL[agent.cli]} default`}
+              placeholder={
+                agent.auth !== "apiKey" || (agent.cli === "claude" && agent.provider === "anthropic")
+                  ? `${CLI_LABEL[agent.cli]} default`
+                  : (PROVIDER_INFO[agent.provider].defaultModel ?? PROVIDER_INFO[agent.provider].models[0] ?? `${CLI_LABEL[agent.cli]} default`)
+              }
               list={agent.auth === "apiKey" ? `models-${agent.provider}` : agent.cli === "codex" ? "codex-models" : "claude-models"}
               onCommit={(v) => set({ model: v.trim() })}
             />
@@ -212,6 +223,7 @@ function AddAgent() {
   const [access, setAccess] = useState(normalizeAuth("claude", "subscription", null));
   const mode: AgentMode = "sandbox";
   const team = useOffice((s) => s.snap?.config.team) ?? [];
+  const live = useOffice((s) => s.snap?.models);
   const suggested = nextAgentName(team.map((a) => a.name));
   const add = () => {
     officeActions.addAgent({ name: name.trim() || suggested, role, cli, ...access, mode });
@@ -265,7 +277,7 @@ function AddAgent() {
       </datalist>
       {PROVIDERS.map((p) => (
         <datalist key={p} id={`models-${p}`}>
-          {PROVIDER_INFO[p].models.map((m) => (
+          {[...(p === "anthropic" ? PROVIDER_INFO.anthropic.models : []), ...(live?.[p] ?? (p === "anthropic" ? [] : PROVIDER_INFO[p].models))].map((m) => (
             <option key={m} value={m} />
           ))}
         </datalist>

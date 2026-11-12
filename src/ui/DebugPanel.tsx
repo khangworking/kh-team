@@ -31,6 +31,7 @@ function summary(e: OfficeEvent): string {
     case "snapshot": return "full snapshot";
     case "workspace.info": return `${e.info.agentId} ${e.info.path}`;
     case "sbx.updated": return `base ${e.sbx.basePolicy}, ${Object.keys(e.sbx.agents).length} sandboxes`;
+    case "models.updated": return `models: ${Object.entries(e.models).map(([p, l]) => `${p} ${l?.length ?? 0}`).join(", ") || "none"}`;
     case "providerKeys.updated": return `keys: ${e.providers.join(", ") || "none"}`;
     case "setup.updated": return `sandbox ${e.setup.sandboxReady ? "ready" : "not ready"}`;
     case "config.updated": return `team ${e.config.team.length}`;
