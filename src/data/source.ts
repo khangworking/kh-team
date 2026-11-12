@@ -1,3 +1,4 @@
+import type { CliVersionInfo } from "./cliVersions";
 import type { ProviderId } from "./providers";
 import type { StackConfig } from "./stack";
 import type {
@@ -36,6 +37,7 @@ export type OfficeEvent =
   | { type: "sbx.updated"; sbx: SbxState }
   | { type: "providerKeys.updated"; providers: ProviderId[] }
   | { type: "models.updated"; models: Partial<Record<ProviderId, string[]>> }
+  | { type: "cliVersions.updated"; cliVersions: Record<string, CliVersionInfo> }
   | { type: "budget.updated"; budget: BudgetState }
   | { type: "rateLimits.updated"; limits: AgentLimit[] }
   | { type: "workspace.info"; info: WorkspaceInfo }

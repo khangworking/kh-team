@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { nextAgentName } from "../../data/names";
 import { modelListed, normalizeAuth, PROVIDER_INFO, PROVIDERS, providersFor, SUBSCRIPTION_PROVIDER, type ProviderId } from "../../data/providers";
+import { cliVersionState } from "../../data/cliVersions";
 import { CLI_LABEL, type AgentAuth, type AgentCli, type AgentConfig, type AgentMode } from "../../data/types";
 import { officeActions, useOffice } from "../../store/office";
 import { agentPalette } from "../../theme/tokens";
@@ -103,6 +104,16 @@ export function TeamSettings() {
 function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig; expanded: boolean; onToggle: () => void; onRemove: () => void }) {
   const set = (patch: Parameters<typeof officeActions.updateAgent>[1]) => officeActions.updateAgent(agent.id, patch);
   const liveModels = useOffice((s) => s.snap?.models?.[agent.provider]);
+  const cliVersion = useOffice((s) => s.snap?.cliVersions?.[agent.id]);
+  const versionState = cliVersionState(cliVersion);
+  const versionText =
+    versionState === "behind"
+      ? `⚠ ${cliVersion!.installed} → ${cliVersion!.latest} available`
+      : versionState === "current"
+        ? `${cliVersion!.installed} · up to date`
+        : cliVersion?.installed
+          ? `${cliVersion.installed} · newest not checked`
+          : "version not read yet";
   const model = agent.model.trim();
   // A list the provider itself gave: a model it doesn't have would stop the agent from starting.
   const unknownModel = agent.auth === "apiKey" && !!model && !/^(default|opus|sonnet|haiku)$/i.test(model) && !!liveModels && !modelListed(liveModels, model);
@@ -120,7 +131,23 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
             <CommitInput className="field" value={agent.role} list="role-suggestions" onCommit={(v) => v.trim() && set({ role: v.trim() })} />
           )}
         </Field>
-        <Field label="Agent">
+        <Field
+          label={
+            <span className="whitespace-nowrap">
+              Agent
+              {cliVersion?.installed && (
+                <span className="ml-1 font-normal text-muted" title={versionText}>
+                  ({cliVersion.installed})
+                </span>
+              )}
+              {versionState === "behind" && (
+                <span className="ml-1 text-red" role="img" aria-label="CLI update available" title={versionText}>
+                  ⚠
+                </span>
+              )}
+            </span>
+          }
+        >
           <CliSelect value={agent.cli} onChange={(cli) => set({ cli })} />
         </Field>
         <Field label="Model access">
@@ -156,6 +183,15 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
                   onClick={() => set({ color: c })}
                 />
               ))}
+            </div>
+          </Field>
+          <Field
+            label={`${CLI_LABEL[agent.cli]} version`}
+            hint="Read from this agent's sandbox while it runs; the newest is npm's latest release. The CLI is part of the sandbox and stays at the version it had when the sandbox was created, so HQ can't update it yet: Recreate sandbox starts a new one (it may reuse sbx's cached image, and drops what the old sandbox held, such as its last conversation)."
+          >
+            <div className="field flex h-9 items-center bg-cream-2">
+              {versionText}
+              {cliVersion?.checkedAt && versionState !== "unknown" ? <span className="ml-2 text-[12px] text-muted">· read {new Date(cliVersion.checkedAt).toLocaleString()}</span> : null}
             </div>
           </Field>
           <Field

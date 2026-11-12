@@ -1,3 +1,4 @@
+import type { CliVersionInfo } from "./cliVersions";
 import type { ProviderId } from "./providers";
 import type { StackConfig } from "./stack";
 // Domain types shared by the data source, the store, the office and the HUD.
@@ -392,6 +393,8 @@ export interface OfficeSnapshot {
   providerKeys?: ProviderId[];
   /** Model ids each provider offers right now (newest first), asked of the provider. A provider missing here has no live list: the UI uses its built-in suggestions. */
   models?: Partial<Record<ProviderId, string[]>>;
+  /** Each agent's coding CLI: the version in its sandbox and the newest published. */
+  cliVersions?: Record<string, CliVersionInfo>;
   /** Today's spend by agents that use an API key, against the office's daily limit. */
   budget?: BudgetState;
   /** Usage limits of the subscriptions the team uses. */

@@ -46,6 +46,8 @@ jobs:
         run: npx tsx scripts/branch-cleanup-test.ts
       - name: Model lists and provider keys
         run: npx tsx scripts/models-test.ts
+      - name: CLI versions
+        run: npx tsx scripts/cli-versions-test.ts
       - name: Pack
         shell: bash
         run: mkdir -p pack && npm pack --ignore-scripts --pack-destination pack

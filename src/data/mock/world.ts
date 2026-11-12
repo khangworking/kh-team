@@ -96,6 +96,10 @@ export class World {
   constructor(preset: Preset) {
     this.preset = preset;
     this.snap = World.initialSnapshot(preset);
+    // Demo CLI versions: every agent current except the second, which is behind.
+    this.snap.cliVersions = Object.fromEntries(
+      this.snap.config.team.map((a, i) => [a.id, { cli: a.cli, installed: i === 1 ? "0.167.0" : "2.1.322", latest: i === 1 ? "0.167.2" : "2.1.322", checkedAt: new Date().toISOString() }]),
+    );
     this.nextPr = preset.mergedPrs + 1;
   }
 

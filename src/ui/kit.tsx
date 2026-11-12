@@ -55,7 +55,7 @@ export function SectionTitle({ children }: { children: ReactNode }) {
   return <h3 className="mb-2 text-[13px] font-semibold uppercase tracking-[0.12em] text-muted">{children}</h3>;
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({ label, hint, children }: { label: ReactNode; hint?: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-[14px] font-semibold">{label}</span>
