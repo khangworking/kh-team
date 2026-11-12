@@ -131,7 +131,23 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
             <CommitInput className="field" value={agent.role} list="role-suggestions" onCommit={(v) => v.trim() && set({ role: v.trim() })} />
           )}
         </Field>
-        <Field label="Agent" hint={versionText}>
+        <Field
+          label={
+            <span className="whitespace-nowrap">
+              Agent
+              {cliVersion?.installed && (
+                <span className="ml-1 font-normal text-muted" title={versionText}>
+                  ({cliVersion.installed})
+                </span>
+              )}
+              {versionState === "behind" && (
+                <span className="ml-1 text-red" role="img" aria-label="CLI update available" title={versionText}>
+                  ⚠
+                </span>
+              )}
+            </span>
+          }
+        >
           <CliSelect value={agent.cli} onChange={(cli) => set({ cli })} />
         </Field>
         <Field label="Model access">
