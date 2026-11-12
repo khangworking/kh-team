@@ -88,6 +88,8 @@ function reduce(snap: OfficeSnapshot, e: OfficeEvent): OfficeSnapshot {
       return { ...snap, sbx: e.sbx };
     case "providerKeys.updated":
       return { ...snap, providerKeys: e.providers };
+    case "cliVersions.updated":
+      return { ...snap, cliVersions: e.cliVersions };
     case "models.updated":
       return { ...snap, models: e.models };
     case "budget.updated":

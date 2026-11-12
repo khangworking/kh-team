@@ -16,6 +16,7 @@ import { GitHubSync } from "./githubSync";
 import { Inbox } from "./inbox";
 import { Planner } from "./planner";
 import { ActionItems } from "./actionItems";
+import { CliVersions } from "./cliVersions";
 import { ModelCatalog } from "./modelCatalog";
 import { ProviderKeys, ProxyKeys } from "./providerKeys";
 import { Budget } from "./budget";
@@ -80,7 +81,12 @@ async function main() {
   const proxyKeys = new ProxyKeys(hub, keys, (id) => sessionName(slug, id));
   sessions.syncProxyKey = (agent) => proxyKeys.sync(agent);
   const mcp = new SbxMcp(hub, (id, file, args, onExit) => sessions.runTerminal(id, file, args, onExit));
+  const cliVersions = new CliVersions(hub);
+  hub.snap.cliVersions = cliVersions.info();
+  setTimeout(() => void cliVersions.check(), 8000).unref(); // after the first sbx calls
+  setInterval(() => void cliVersions.check(), 30 * 60_000).unref(); // npm is asked again only after its TTL
   sessions.onSandboxReady = (id) => {
+    setTimeout(() => void cliVersions.check({ only: [id] }), 15_000).unref(); // the sandbox needs a moment before it answers
     void sbx.syncRules(id);
     void mcp.attachAll(id);
     void sbx.refreshPorts(id);
