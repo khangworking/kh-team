@@ -1,5 +1,6 @@
 // Browser commands → server actions. Names match OfficeDataSource methods.
 
+import { isVersion } from "../src/data/cliVersions";
 import { isProvider, normalizeAuth } from "../src/data/providers";
 import { SERVICE_KEYS, type AgentCli, type AgentConfig, type AgentPatch, type ReviewTool, type WelcomeInput, type NewMcpServer, type Board, type NewAgentInput, type ProjectConfig, type RemoveAgentOptions, type SandboxSettings, type SetupCheckId, type WorkflowPatch } from "../src/data/types";
 import { LEAD_NAME, OFFICE_NAME_MAX } from "../src/data/names";
@@ -119,6 +120,7 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
       for (const k of ["name", "role", "model", "color", "roleMd"] as const) if (typeof p[k] === "string") agent[k] = str(p[k], 8000);
       if (p.cli !== undefined && toCli(p.cli) !== agent.cli) {
         agent.cli = toCli(p.cli);
+        if (p.cliVersion === undefined) agent.cliVersion = null; // a version of one CLI means nothing for another
         // Model names don't carry over between CLIs.
         if (typeof p.model !== "string") agent.model = "";
       }
@@ -129,6 +131,7 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
       Object.assign(agent, auth);
       if (typeof p.resume === "boolean") agent.resume = p.resume;
       if (typeof p.reviewer === "boolean" && !agent.isLead) agent.reviewer = p.reviewer;
+      if (p.cliVersion !== undefined) agent.cliVersion = isVersion(p.cliVersion) ? p.cliVersion : null; // anything but x.y.z clears the pin
       if (Array.isArray(p.skills)) agent.skills = p.skills.map((s) => str(s, 60)).filter(Boolean);
       if (p.workspacePath !== undefined) agent.workspacePath = p.workspacePath ? str(p.workspacePath, 500).trim() || null : null;
       hub.configChanged();

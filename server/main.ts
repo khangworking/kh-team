@@ -80,6 +80,7 @@ async function main() {
   sessions.claudeLatest = (family) => models.latestClaude(family);
   const proxyKeys = new ProxyKeys(hub, keys, (id) => sessionName(slug, id));
   sessions.syncProxyKey = (agent) => proxyKeys.sync(agent);
+  sessions.pinCli = (id) => cliVersions.enforcePin(id);
   const mcp = new SbxMcp(hub, (id, file, args, onExit) => sessions.runTerminal(id, file, args, onExit));
   const cliVersions = new CliVersions(hub);
   hub.snap.cliVersions = cliVersions.info();

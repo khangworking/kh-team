@@ -188,13 +188,14 @@ export function createMockSource(): OfficeDataSource {
 
     upgradeCli(id) {
       const info = world.snap.cliVersions?.[id];
-      if (!info?.latest || !world.snap.cliVersions) return;
+      const target = info?.pinned || info?.latest;
+      if (!info || !target || !world.snap.cliVersions) return;
       world.snap.cliVersions[id] = { ...info, upgrading: true };
       world.emit({ type: "cliVersions.updated", cliVersions: structuredClone(world.snap.cliVersions) });
       setTimeout(() => {
         if (!world.snap.cliVersions) return;
-        world.snap.cliVersions[id] = { ...info, installed: info.latest, checkedAt: new Date().toISOString() };
-        world.activity("session", id, `${world.name(id)}: ${info.cli} upgraded from ${info.installed} to ${info.latest} (mock). It takes effect the next time ${world.name(id)} starts.`);
+        world.snap.cliVersions[id] = { ...info, installed: target, checkedAt: new Date().toISOString() };
+        world.activity("session", id, `${world.name(id)}: ${info.cli} ${info.installed} → ${target} (mock). It takes effect the next time ${world.name(id)} starts.`);
         world.emit({ type: "cliVersions.updated", cliVersions: structuredClone(world.snap.cliVersions) });
       }, 2500);
     },
@@ -259,6 +260,10 @@ export function createMockSource(): OfficeDataSource {
       const agent = world.cfg(id);
       if (!agent) return;
       Object.assign(agent, patch);
+      if (patch.cliVersion !== undefined && world.snap.cliVersions?.[id]) {
+        world.snap.cliVersions[id] = { ...world.snap.cliVersions[id], pinned: patch.cliVersion || null };
+        world.emit({ type: "cliVersions.updated", cliVersions: structuredClone(world.snap.cliVersions) });
+      }
       world.configChanged();
     },
 

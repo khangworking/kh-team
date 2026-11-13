@@ -91,6 +91,7 @@ export function loadConfig(repo: RepoInfo, port: number): { config: HqConfig; is
       a.mcp ??= [];
       a.resume ??= true;
       a.reviewer ??= false;
+      a.cliVersion ??= null;
       a.cli ??= "claude";
       if ((a.cli as string) === "pi") a.cli = "opencode"; // Pi was tried in P0, then OpenCode came back
       a.mode = "sandbox"; // every agent runs in its own Docker Sandbox
