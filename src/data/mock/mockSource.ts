@@ -186,6 +186,19 @@ export function createMockSource(): OfficeDataSource {
       world.activity("session", id, `Recreated ${world.name(id)}'s sandbox`);
     },
 
+    upgradeCli(id) {
+      const info = world.snap.cliVersions?.[id];
+      if (!info?.latest || !world.snap.cliVersions) return;
+      world.snap.cliVersions[id] = { ...info, upgrading: true };
+      world.emit({ type: "cliVersions.updated", cliVersions: structuredClone(world.snap.cliVersions) });
+      setTimeout(() => {
+        if (!world.snap.cliVersions) return;
+        world.snap.cliVersions[id] = { ...info, installed: info.latest, checkedAt: new Date().toISOString() };
+        world.activity("session", id, `${world.name(id)}: ${info.cli} upgraded from ${info.installed} to ${info.latest} (mock). It takes effect the next time ${world.name(id)} starts.`);
+        world.emit({ type: "cliVersions.updated", cliVersions: structuredClone(world.snap.cliVersions) });
+      }, 2500);
+    },
+
     openWorkspace(id) {
       hostCmd(id, `open ${world.status(id)?.session.workspace ?? "?"} (mock: nothing opens)`);
     },

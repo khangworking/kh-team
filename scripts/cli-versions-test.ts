@@ -10,8 +10,8 @@ import { join } from "node:path";
 const home = mkdtempSync(join(tmpdir(), "hq-cliver-"));
 Object.assign(process.env, { HOME: home, USERPROFILE: home });
 
-const { compareVersions, cliVersionState, parseVersion, NPM_PACKAGE } = await import("../src/data/cliVersions");
-const { CliVersions } = await import("../server/cliVersions");
+const { cliLine, compareVersions, cliVersionState, parseVersion, NPM_PACKAGE } = await import("../src/data/cliVersions");
+const { CliVersions, upgradeCommand, CODEX_INSTALL } = await import("../server/cliVersions");
 
 // ---------------------------------------------------------------- reading and comparing
 assert.equal(parseVersion("2.1.322 (Claude Code)"), "2.1.322");
@@ -35,15 +35,16 @@ assert.equal(cliVersionState({ installed: "2.0.29", latest: "1.19.5" }), "curren
 assert.deepEqual(Object.keys(NPM_PACKAGE).sort(), ["claude", "codex", "opencode"]);
 
 // ---------------------------------------------------------------- the server side
-type A = { id: string; cli: "claude" | "codex" | "opencode" };
+type A = { id: string; name: string; cli: "claude" | "codex" | "opencode" };
 const team: A[] = [
-  { id: "jim", cli: "claude" },
-  { id: "dwight", cli: "codex" },
-  { id: "pam", cli: "opencode" },
+  { id: "jim", name: "Jim", cli: "claude" },
+  { id: "dwight", name: "Dwight", cli: "codex" },
+  { id: "pam", name: "Pam", cli: "opencode" },
 ];
 const hubOf = (slug: string) => {
   const events: { type: string }[] = [];
-  return { events, hub: { slug, snap: { config: { team } } as { config: { team: A[] }; cliVersions?: unknown }, emit: (e: { type: string }) => events.push(e) } };
+  const activity: string[] = [];
+  return { events, activity, hub: { slug, snap: { config: { team } } as { config: { team: A[] }; cliVersions?: unknown }, emit: (e: { type: string }) => events.push(e), activity: (_k: string, _id: string, text: string) => activity.push(text) } };
 };
 
 const calls: string[][] = [];
@@ -59,13 +60,13 @@ const fakeRun = async (_cmd: string, args: string[]) => {
   const out = outputs[`${args[1]} ${args[2]}`];
   return out === undefined ? { ok: false, code: 1, stdout: "", stderr: "not found" } : { ok: true, code: 0, stdout: out, stderr: "" };
 };
-const npm: Record<string, string> = { "@anthropic-ai/claude-code": "2.1.322", "@openai/codex": "0.167.2", "opencode-ai": "1.19.5" };
+const npm: Record<string, string> = { "@anthropic-ai/claude-code": "2.1.322", "@openai/codex": "0.167.2", "opencode-ai": "1.19.5", "opencode2": "2.2.7" };
 const urls: string[] = [];
 let npmDown = false;
 const fakeFetch = async (url: string) => {
   urls.push(url);
   if (npmDown) throw new Error("offline");
-  const pkg = url.replace("https://registry.npmjs.org/", "").replace("/latest", "");
+  const pkg = url.includes("opencode.ai/update") ? "opencode2" : url.replace("https://registry.npmjs.org/", "").replace("/latest", "");
   return { ok: pkg in npm, json: async () => ({ version: npm[pkg] }) };
 };
 let clock = 1_000_000;
@@ -101,7 +102,7 @@ const make = (slug = "v") => {
   assert.equal(events.filter((e) => e.type === "cliVersions.updated").length, 1);
   clock += 7 * 3_600_000;
   await cv.check();
-  assert.equal(urls.length, n + 3, "after the TTL");
+  assert.equal(urls.length, n + 4, "after the TTL: claude, codex, and both OpenCode lines");
 
   // npm unreachable: the older answer stays.
   clock += 7 * 3_600_000;
@@ -167,6 +168,120 @@ const make = (slug = "v") => {
   await second;
   await new Promise((r) => setTimeout(r, 50)); // the queued look
   assert.deepEqual(calls.filter((c) => c[0] === "exec").map((c) => c[1]).sort(), ["hq-v-dwight", "hq-v-jim"]);
+}
+
+// ---------------------------------------------------------------- OpenCode 2 is compared with OpenCode 2
+assert.equal(cliLine("opencode", "2.0.29"), "opencode2");
+assert.equal(cliLine("opencode", "1.19.0"), "opencode");
+assert.equal(cliLine("opencode", null), "opencode");
+assert.equal(cliLine("claude", "2.1.322"), "claude");
+{
+  status = { "hq-v-jim": "running", "hq-v-dwight": "running", "hq-v-pam": "running" };
+  outputs["hq-v-pam opencode"] = "opencode v2.0.29\n";
+  outputs["hq-v-dwight codex"] = "codex-cli 0.167.2\n";
+  const { cv } = make();
+  await cv.check({ force: true });
+  assert.equal(cv.info().pam.installed, "2.0.29");
+  assert.equal(cv.info().pam.latest, "2.2.7", "not npm's 1.19.5");
+  assert.equal(cliVersionState(cv.info().pam), "behind");
+  outputs["hq-v-pam opencode"] = "opencode v1.19.0\n";
+  await cv.check({ force: true });
+  assert.equal(cv.info().pam.latest, "1.19.5", "a sandbox still on OpenCode 1");
+}
+
+// ---------------------------------------------------------------- upgrading
+{
+  assert.deepEqual(upgradeCommand("claude", "2.1.322"), ["claude", "update"]);
+  assert.deepEqual(upgradeCommand("opencode", "2.2.7"), ["opencode", "upgrade", "--method", "curl"]);
+  assert.deepEqual(upgradeCommand("codex", "0.167.2"), ["sh", "-c", CODEX_INSTALL, "sh", "0.167.2"]);
+  assert.match(CODEX_INSTALL, /rust-v\$v\/codex-package-\$t\.tar\.gz/, "the whole package, not the lone binary");
+  assert.match(CODEX_INSTALL, /\.local\/share\/codex/, "the agent user's own directory, no root needed");
+  assert.match(CODEX_INSTALL, /mv -Tf .*codex\.new.* .*\/codex"/, "the symlink is replaced in one step");
+  assert.match(CODEX_INSTALL, /prev=\$\(readlink/, "the version in use is kept");
+}
+
+{
+  // What a real sandbox does: the upgrade command changes what --version says.
+  status = { "hq-v-jim": "running", "hq-v-dwight": "running", "hq-v-pam": "exited" };
+  outputs["hq-v-jim claude"] = "2.1.311 (Claude Code)\n";
+  outputs["hq-v-dwight codex"] = "codex-cli 0.167.0\n";
+  let behave: "ok" | "fail" | "nochange" = "ok";
+  const seenUpgrading: boolean[] = [];
+  let cvRef: { info: () => Record<string, { upgrading?: boolean }> } | null = null;
+  const upgradeRun = async (cmd: string, args: string[]) => {
+    if (args[0] === "exec" && (args[2] === "claude" && args[3] === "update" || args[2] === "sh")) {
+      calls.push(args);
+      seenUpgrading.push(!!cvRef?.info()[args[1].replace("hq-v-", "")].upgrading);
+      if (behave === "fail") return { ok: false, code: 1, stdout: "", stderr: "curl: (22) The requested URL returned error: 404\n" };
+      if (behave === "ok") outputs[`${args[1]} ${args[1].endsWith("jim") ? "claude" : "codex"}`] = args[1].endsWith("jim") ? "2.1.322 (Claude Code)\n" : "codex-cli 0.167.2\n";
+      return { ok: true, code: 0, stdout: "done\n", stderr: "" };
+    }
+    return fakeRun(cmd, args);
+  };
+  const h = hubOf("v");
+  const cv = new CliVersions(h.hub as never, { run: upgradeRun as never, fetch: fakeFetch as never, now: () => clock, file: join(home, "up-state.json") });
+  cvRef = cv;
+  await cv.check({ force: true });
+  const info = () => h.hub.snap.cliVersions as ReturnType<typeof cv.info>;
+  assert.equal(cliVersionState(info().jim), "behind");
+  assert.equal(cliVersionState(info().dwight), "behind");
+
+  // Not behind / not running: refused, with the reason.
+  const refused = await cv.upgrade("nobody");
+  assert.equal(refused.ok, false);
+  status["hq-v-dwight"] = "exited";
+  const stopped = await cv.upgrade("dwight");
+  assert.equal(stopped.ok, false);
+  assert.match(stopped.message, /Start Dwight first/);
+  assert.match(info().dwight.error ?? "", /Start Dwight first/, "kept for the UI");
+  assert.ok(!calls.some((c) => c[0] === "exec" && c[1] === "hq-v-dwight" && c[2] === "sh"), "nothing was run in a stopped sandbox");
+  status["hq-v-dwight"] = "running";
+
+  // Claude: success.
+  calls.length = 0;
+  seenUpgrading.length = 0;
+  h.events.length = 0;
+  const done = cv.upgrade("jim");
+  assert.equal((await cv.upgrade("jim")).ok, false, "not twice at once");
+  const res = await done;
+  assert.equal(res.ok, true);
+  assert.match(res.message, /upgraded from 2\.1\.311 to 2\.1\.322/);
+  assert.match(res.message, /next time Jim starts/);
+  assert.deepEqual(seenUpgrading, [true]);
+  assert.equal(info().jim.installed, "2.1.322");
+  assert.equal(info().jim.upgrading, undefined);
+  assert.equal(info().jim.error, undefined);
+  assert.deepEqual(calls.find((c) => c[0] === "exec" && c[2] === "claude" && c[3] === "update"), ["exec", "hq-v-jim", "claude", "update"]);
+  assert.ok(h.activity.some((t) => /upgraded from 2\.1\.311/.test(t)));
+  assert.equal((await cv.upgrade("jim")).ok, false, "up to date now: nothing to do");
+
+  // Codex: the install script runs with the newest version as its argument.
+  calls.length = 0;
+  assert.equal((await cv.upgrade("dwight")).ok, true);
+  assert.deepEqual(calls.find((c) => c[2] === "sh")?.slice(-2), ["sh", "0.167.2"]);
+  assert.equal(info().dwight.installed, "0.167.2");
+
+  // A failing command: the last line of what it said is the reason; the version is unchanged.
+  outputs["hq-v-jim claude"] = "2.1.311 (Claude Code)\n";
+  await cv.check({ force: true });
+  behave = "fail";
+  const bad = await cv.upgrade("jim");
+  assert.equal(bad.ok, false);
+  assert.match(bad.message, /upgrading claude failed: curl: \(22\) The requested URL returned error: 404/);
+  assert.equal(info().jim.installed, "2.1.311");
+  assert.match(info().jim.error ?? "", /404/);
+
+  // A command that says "ok" but changes nothing is not success.
+  behave = "nochange";
+  const same = await cv.upgrade("jim");
+  assert.equal(same.ok, false);
+  assert.match(same.message, /still 2\.1\.311/);
+  assert.equal(info().jim.error?.includes("still 2.1.311"), true);
+
+  // The next try clears the old error.
+  behave = "ok";
+  assert.equal((await cv.upgrade("jim")).ok, true);
+  assert.equal(info().jim.error, undefined);
 }
 
 console.log("cli-versions: ok");

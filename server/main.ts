@@ -134,7 +134,7 @@ async function main() {
     agentToken: token,
     distDir: dev ? null : distDir,
     allowedOrigins: [uiOrigin, `http://127.0.0.1:${uiPort}`, `http://localhost:${port}`, `http://127.0.0.1:${port}`],
-    commands: makeCommands(hub, sessions, planner, inbox, sbx, mcp, keys, budget),
+    commands: makeCommands(hub, sessions, planner, inbox, sbx, mcp, keys, budget, cliVersions),
   });
   sessions.startPolling();
   sbx.startApprovalPolling();

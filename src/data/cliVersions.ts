@@ -13,7 +13,18 @@ export interface CliVersionInfo {
   latest: string | null;
   /** When the installed version was read (ISO), so a stopped agent shows what its sandbox had last time. */
   checkedAt: string | null;
+  /** An upgrade is running in the agent's sandbox. */
+  upgrading?: boolean;
+  /** Why the last upgrade failed (cleared by the next one). */
+  error?: string | null;
 }
+
+/**
+ * Which published line a CLI belongs to. OpenCode 2 is released apart from OpenCode 1 (npm's "latest" tag is still 1.x),
+ * so a sandbox on 2.x is compared with the newest 2.x.
+ */
+export type CliLine = AgentCli | "opencode2";
+export const cliLine = (cli: AgentCli, installed: string | null): CliLine => (cli === "opencode" && installed && parseInt(installed, 10) >= 2 ? "opencode2" : cli);
 
 /** The first x.y.z in a CLI's --version output ("2.1.322 (Claude Code)", "codex-cli 0.167.0", "1.19.0"). */
 export function parseVersion(text: string): string | null {

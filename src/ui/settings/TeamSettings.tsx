@@ -106,6 +106,7 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
   const liveModels = useOffice((s) => s.snap?.models?.[agent.provider]);
   const cliVersion = useOffice((s) => s.snap?.cliVersions?.[agent.id]);
   const versionState = cliVersionState(cliVersion);
+  const sandboxRunning = useOffice((s) => s.snap?.agents.find((a) => a.agentId === agent.id)?.session.state === "running");
   const versionText =
     versionState === "behind"
       ? `⚠ ${cliVersion!.installed} → ${cliVersion!.latest} available`
@@ -119,7 +120,7 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
   const unknownModel = agent.auth === "apiKey" && !!model && !/^(default|opus|sonnet|haiku)$/i.test(model) && !!liveModels && !modelListed(liveModels, model);
   return (
     <div className="border-[3px] border-ink bg-white">
-      <div className="grid grid-cols-[40px_1fr_1fr_120px_170px_100px_auto] items-end gap-2.5 p-2.5">
+      <div className="grid grid-cols-[40px_1fr_1fr_165px_170px_100px_auto] items-end gap-2.5 p-2.5">
         <Portrait color={agent.color} lead={agent.isLead} />
         <Field label="Name">
           <CommitInput className="field" value={agent.name} onCommit={(v) => v.trim() && set({ name: v.trim() })} />
@@ -141,9 +142,32 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
                 </span>
               )}
               {versionState === "behind" && (
-                <span className="ml-1 text-red" role="img" aria-label="CLI update available" title={versionText}>
-                  ⚠
-                </span>
+                <>
+                  <span className="ml-1 text-red" role="img" aria-label="CLI update available" title={cliVersion?.error ? `${versionText}. Last upgrade: ${cliVersion.error}` : versionText}>
+                    ⚠
+                  </span>
+                  <button
+                    type="button"
+                    className="ml-1 inline-flex h-[18px] w-[18px] items-center justify-center border-2 border-ink bg-white align-middle hover:bg-cream-2 disabled:opacity-50"
+                    disabled={!!cliVersion?.upgrading || !sandboxRunning}
+                    aria-label={`Upgrade ${CLI_LABEL[agent.cli]} to ${cliVersion?.latest}`}
+                    title={
+                      cliVersion?.upgrading
+                        ? `Upgrading ${CLI_LABEL[agent.cli]}…`
+                        : sandboxRunning
+                          ? `Upgrade ${CLI_LABEL[agent.cli]} ${cliVersion?.installed} → ${cliVersion?.latest} in this agent's sandbox. It takes effect the next time ${agent.name} starts.`
+                          : `Start ${agent.name} first: the upgrade is done inside its running sandbox.`
+                    }
+                    onClick={(e) => {
+                      e.preventDefault(); // inside a label: don't pass the click to the select
+                      officeActions.upgradeCli(agent.id);
+                    }}
+                  >
+                    <svg viewBox="0 0 10 10" width="10" height="10" fill="currentColor" aria-hidden className={cliVersion?.upgrading ? "animate-spin" : ""}>
+                      <path d="M5 0 L9.5 5 H6.5 V8 H3.5 V5 H0.5 Z M2 9 H8 V10 H2 Z" />
+                    </svg>
+                  </button>
+                </>
               )}
             </span>
           }
@@ -269,7 +293,7 @@ function AddAgent() {
     <section className="border-[3px] border-dashed border-ink p-3">
       <SectionTitle>Add an agent</SectionTitle>
       <form
-        className="grid grid-cols-[1fr_1fr_120px_170px_100px_auto] items-end gap-2.5"
+        className="grid grid-cols-[1fr_1fr_165px_170px_100px_auto] items-end gap-2.5"
         onSubmit={(e) => {
           e.preventDefault();
           add();
