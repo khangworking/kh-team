@@ -1,4 +1,4 @@
-# How JSM HQ works
+# How KH Team works
 
 What HQ does behind the office: where agents work, how they talk, what reaches GitHub, and what HQ saves. New here? Start with the [getting-started guide](getting-started.md).
 
@@ -27,8 +27,8 @@ New teams get names from The Office: Michael leads, then Dwight, Jim, Pam and so
 
 ## Workspaces and sessions
 
-- **Its own copy of the repo.** Each agent gets a full clone at `~/.jsmhq/<project>/<agent>/`. Your own working folder is never touched.
-- **Its instructions.** HQ writes `.jsmhq-role.md` into that folder: the agent's role (the ROLE.md text from Settings → Team), the team, the rules and its tools. HQ also adds its hooks and MCP config there, and keeps all of these out of git. If the folder has its own `ROLE.md`, HQ includes it and never overwrites it.
+- **Its own copy of the repo.** Each agent gets a full clone at `~/.kh-team/<project>/<agent>/`. Your own working folder is never touched.
+- **Its instructions.** HQ writes `.kh-team-role.md` into that folder: the agent's role (the ROLE.md text from Settings → Team), the team, the rules and its tools. HQ also adds its hooks and MCP config there, and keeps all of these out of git. If the folder has its own `ROLE.md`, HQ includes it and never overwrites it.
 - **Its session.** On macOS and Linux each agent runs in a tmux session called `hq-<project>-<agent>`, so agents keep working if you close HQ or the browser. You can watch one from any terminal with `tmux attach -t hq-<project>-<agent>`, or open its drawer in HQ.
 
 ## Messages between agents
@@ -127,12 +127,14 @@ HQ never stores key values and never reads your env files.
 
 | File | What | Commit it? |
 | --- | --- | --- |
-| `.jsmhq/config.json` (in your repo) | Team, workflow, stack, office name | Yes, so your team shares it |
-| `.jsmhq/plan.json` (in your repo) | Boards and tasks | Yes |
+| `.kh-team/config.json` (in your repo) | Team, workflow, stack, office name | Yes, so your team shares it |
+| `.kh-team/plan.json` (in your repo) | Boards and tasks | Yes |
 | `docs/plan.md` (in your repo) | A readable copy of the plan, if **Settings → Project → Export plan** is on | Yes |
-| `~/.jsmhq/<project>/` | Agents' folders, app variables, action items and HQ's own records | No, it's outside your repo, on your machine only |
+| `~/.kh-team/<project>/` | Agents' folders, app variables, action items and HQ's own records | No, it's outside your repo, on your machine only |
 
-**Remove a project:** delete each agent in Settings → Team (this removes its sandbox and, if you choose, its folder), then delete `~/.jsmhq/<project>`.
+**Offices from before the rename.** KH Team used to be called JSM HQ and kept its files in `~/.jsmhq/<project>/` and `.jsmhq/` in your repo. An office or repo that already has those keeps using them (the agents' folders are mounted into their sandboxes by path, so HQ doesn't move them); new ones use `~/.kh-team/` and `.kh-team/`. Where this page says `~/.kh-team/<project>` or `.kh-team/`, an older office has `~/.jsmhq/<project>` or `.jsmhq/`.
+
+**Remove a project:** delete each agent in Settings → Team (this removes its sandbox and, if you choose, its folder), then delete `~/.kh-team/<project>`.
 
 ## Windows
 

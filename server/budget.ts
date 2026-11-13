@@ -1,6 +1,6 @@
 // The office's daily budget. Agents that use an API key report what each model call cost (the
 // OpenCode plugin per step, Claude Code's status line as a running total per session). HQ adds it
-// up per local day in ~/.jsmhq/<project>/spend.json. Subscription agents have no USD cost and
+// up per local day in ~/.kh-team/<project>/spend.json. Subscription agents have no USD cost and
 // Ollama is free, so only API-key agents count. Codex reports no cost yet, so its API-key
 // agents are not counted.
 //

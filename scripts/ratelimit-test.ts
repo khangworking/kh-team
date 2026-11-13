@@ -9,7 +9,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// The state file goes in a scratch home, not the real ~/.jsmhq.
+// The state file goes in a scratch home, not the real ~/.kh-team.
 const home = mkdtempSync(join(tmpdir(), "hq-limits-"));
 Object.assign(process.env, { HOME: home, USERPROFILE: home });
 

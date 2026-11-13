@@ -48,11 +48,13 @@ jobs:
         run: npx tsx scripts/models-test.ts
       - name: CLI versions
         run: npx tsx scripts/cli-versions-test.ts
+      - name: Rename (old JSM HQ files keep working)
+        run: npx tsx scripts/rename-test.ts
       - name: Pack
         shell: bash
         run: mkdir -p pack && npm pack --ignore-scripts --pack-destination pack
       - name: CLI smoke test
-        run: node bin/jsm-hq.mjs --version && node bin/jsm-hq.mjs --help
+        run: node bin/kh-team.mjs --version && node bin/kh-team.mjs --help
       - name: Install and run like a new user
         shell: bash
         run: node scripts/smoke-test.mjs pack/*.tgz 7431

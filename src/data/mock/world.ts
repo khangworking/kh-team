@@ -66,7 +66,7 @@ export function mockSbx(team: AgentConfig[], project: string): SbxState {
         ...a.sandbox.deny.map((r) => rule("deny", r)),
       ],
       keys: a.isLead ? [] : ["openai"],
-      envFile: { path: `~/.jsmhq/${slug(project)}/${a.id}.env`, exists: !a.isLead },
+      envFile: { path: `~/.kh-team/${slug(project)}/${a.id}.env`, exists: !a.isLead },
       syncError: null,
       // Demo: the first worker's sandbox blocked a few things (claude.ai connectors and a docs site).
       approvals: !a.isLead && team.filter((t) => !t.isLead)[0]?.id === a.id
@@ -78,7 +78,7 @@ export function mockSbx(team: AgentConfig[], project: string): SbxState {
 }
 
 export function mockSession(project: string, agentId: string): SessionInfo {
-  return { state: "running", detail: null, workspace: `~/.jsmhq/${slug(project)}/${agentId}`, sandbox: { cpus: 8, memoryGb: 8 } };
+  return { state: "running", detail: null, workspace: `~/.kh-team/${slug(project)}/${agentId}`, sandbox: { cpus: 8, memoryGb: 8 } };
 }
 
 export class World {

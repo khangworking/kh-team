@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// Files go in a scratch home, not the real ~/.jsmhq.
+// Files go in a scratch home, not the real ~/.kh-team.
 const home = mkdtempSync(join(tmpdir(), "hq-models-"));
 Object.assign(process.env, { HOME: home, USERPROFILE: home });
 
@@ -194,7 +194,7 @@ const make = (slug: string, file = cacheFile) => {
   assert.equal(proxyService("codex", "openai"), null);
 
   const hub = { slug: "proxy", snap: {}, emit() {}, cfg: () => undefined } as never;
-  const keyFile = join(home, ".jsmhq", "proxy", "providers.env");
+  const keyFile = join(home, ".kh-team", "proxy", "providers.env");
   const keys = new ProviderKeys(hub);
   keys.ensureFile();
   writeFileSync(keyFile, "ANTHROPIC_API_KEY=sk-ant-live\nDEEPSEEK_API_KEY=sk-ds-live\nOPENROUTER_API_KEY=sk-or-live\nOPENAI_API_KEY=\n");

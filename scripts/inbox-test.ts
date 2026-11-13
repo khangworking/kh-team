@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// The file goes in a scratch home, not the real ~/.jsmhq.
+// The file goes in a scratch home, not the real ~/.kh-team.
 const home = mkdtempSync(join(tmpdir(), "hq-inbox-"));
 Object.assign(process.env, { HOME: home, USERPROFILE: home });
 
@@ -29,7 +29,7 @@ const make = (slug: string, tasks: { id: string; ownerId: string | null; status:
   };
   const keys = { type: async (id: string, text: string) => (typed.push([id, text]), true), enter: async () => true };
   const inbox = new Inbox(hub as never, keys);
-  const file = join(home, ".jsmhq", slug, "inbox.json");
+  const file = join(home, ".kh-team", slug, "inbox.json");
   const saved = () => (existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as { queues: Record<string, { text: string }[]>; inflight: Record<string, { text: string }[]> }) : { queues: {}, inflight: {} });
   return { hub, inbox, state, typed, activity, file, saved };
 };
@@ -146,8 +146,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // ---- A broken file is not fatal.
 {
   const { writeFileSync, mkdirSync } = await import("node:fs");
-  mkdirSync(join(home, ".jsmhq", "broken"), { recursive: true });
-  writeFileSync(join(home, ".jsmhq", "broken", "inbox.json"), "{ not json");
+  mkdirSync(join(home, ".kh-team", "broken"), { recursive: true });
+  writeFileSync(join(home, ".kh-team", "broken", "inbox.json"), "{ not json");
   const a = make("broken");
   assert.equal(a.inbox.pending("dwight"), 0);
   a.inbox.stop();

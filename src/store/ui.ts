@@ -41,7 +41,8 @@ interface UiState {
   drawerMaximized: boolean;
 }
 
-const WIDTH_KEY = "jsmhq.drawerWidth";
+const WIDTH_KEY = "kh-team.drawerWidth";
+const LEGACY_WIDTH_KEY = "jsmhq.drawerWidth"; // before the rename
 export const DRAWER_MIN = 420;
 export const DRAWER_DEFAULT = 520;
 
@@ -52,7 +53,7 @@ export function drawerMax() {
 
 function savedWidth(): number {
   try {
-    const v = Number(localStorage.getItem(WIDTH_KEY));
+    const v = Number(localStorage.getItem(WIDTH_KEY) ?? localStorage.getItem(LEGACY_WIDTH_KEY));
     return Number.isFinite(v) && v >= DRAWER_MIN ? v : DRAWER_DEFAULT;
   } catch {
     return DRAWER_DEFAULT;

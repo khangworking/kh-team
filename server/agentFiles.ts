@@ -11,9 +11,9 @@ import type { AgentConfig, HqConfig } from "../src/data/types";
 /** Team MCP config, passed with `claude --mcp-config` (so the project's own .mcp.json is untouched). */
 export const MCP_CONFIG = ".claude/hq-mcp.json";
 /** Local mode on Windows: hooks run this with node (no sh or curl there). */
-export const HOOK_SCRIPT = ".jsmhq-hook.mjs";
+export const HOOK_SCRIPT = ".kh-team-hook.mjs";
 /** HQ's generated role file. Its own name, so a ROLE.md the project has is never overwritten. */
-export const ROLE_FILE = ".jsmhq-role.md";
+export const ROLE_FILE = ".kh-team-role.md";
 export const HQ_FILES = [ROLE_FILE, ".claude/settings.local.json", MCP_CONFIG, HOOK_SCRIPT];
 
 /** Extra context for the generated role: the folder's own ROLE.md, and whether app variables are set. */
@@ -25,7 +25,7 @@ export interface RoleExtras {
 }
 
 /** HQ ≤ 0.3 wrote its role to ROLE.md; recognise that so it can be cleaned up. */
-const isHqRole = (text: string) => text.includes("## Team MCP (server `hq`)") && text.includes("You are managed by JSM HQ.");
+const isHqRole = (text: string) => text.includes("## Team MCP (server `hq`)") && (text.includes("You are managed by KH Team.") || text.includes("You are managed by JSM HQ."));
 
 /**
  * The folder's own ROLE.md, if it has one (it's included in the generated role). A ROLE.md that an
@@ -42,10 +42,13 @@ export async function adoptRoleFile(dir: string): Promise<string | null> {
   }
   return null;
 }
-export const MARK = "# jsmhq-hook";
+export const MARK = "# kh-team-hook";
 /** Same marker for node hook commands (cmd and PowerShell have no `#` comments). */
-const MARK_ARG = "--jsmhq-hook";
-const isOurs = (command: string) => command.includes(MARK) || command.includes(MARK_ARG);
+const MARK_ARG = "--kh-team-hook";
+/** What HQ called its files and hook markers before the rename: still recognised, so old entries are replaced, never doubled. */
+export const LEGACY_FILES = [".jsmhq-role.md", ".jsmhq-hook.mjs"];
+const LEGACY_MARKS = ["# jsmhq-hook", "--jsmhq-hook"];
+const isOurs = (command: string) => [MARK, MARK_ARG, ...LEGACY_MARKS].some((m) => command.includes(m));
 
 /**
  * Hooks run where the agent runs. Sandboxes are Linux, so they use sh + curl;
@@ -57,8 +60,8 @@ export function hookScriptFor(agent: AgentConfig, dir: string): string | null {
   return join(dir, HOOK_SCRIPT).replace(/\\/g, "/");
 }
 
-const HOOK_SCRIPT_SOURCE = `// Written by JSM HQ (git-excluded). Sends this agent's hook events to HQ.
-// Usage: node .jsmhq-hook.mjs <url> <token> [--print-reply] | --print-role
+const HOOK_SCRIPT_SOURCE = `// Written by KH Team (git-excluded). Sends this agent's hook events to HQ.
+// Usage: node .kh-team-hook.mjs <url> <token> [--print-reply] | --print-role
 import { readFileSync } from "node:fs";
 
 const args = process.argv.slice(2).filter((a) => a !== "${MARK_ARG}");
@@ -171,10 +174,10 @@ export function roleMd(agent: AgentConfig, cfg: HqConfig, extras: RoleExtras = {
     ...(extras.ownRole?.trim() ? ["## From ROLE.md in this folder", extras.ownRole.trim(), ""] : []),
     "## Team MCP (server `hq`)",
     `Your tools: ${tools}.`,
-    "Messages that start with `[HQ]` come from JSM HQ: assignments from the lead, or messages from teammates. Act on them.",
+    "Messages that start with `[HQ]` come from KH Team: assignments from the lead, or messages from teammates. Act on them.",
     "Teammates work in their own sandboxes and cannot see your files or terminal. Talk to them only with send_message.",
     "",
-    `Project: ${cfg.project.name} (${cfg.project.repo}). You are managed by JSM HQ.`,
+    `Project: ${cfg.project.name} (${cfg.project.repo}). You are managed by KH Team.`,
     "",
   ].join("\n");
 }
@@ -238,11 +241,18 @@ export function writeMcpConfig(dir: string, agent: AgentConfig, port: number, to
 
 /** Claude Code's files: the role (loaded by the SessionStart hook), hooks, and the Team MCP config. */
 export function writeClaudeFiles(dir: string, agent: AgentConfig, cfg: HqConfig, token: string, extras: RoleExtras = {}) {
+  dropLegacyFiles(dir);
   agentWrite(dir, ROLE_FILE, roleMd(agent, cfg, extras));
   writeSettings(dir, agent, cfg.project.hqPort, token);
   writeMcpConfig(dir, agent, cfg.project.hqPort, token);
   if (hookScriptFor(agent, dir)) writeHookScript(dir);
   excludeFromGit(dir, HQ_FILES);
+}
+
+/** Removes what an HQ from before the rename wrote into the agent's folder (its role and hook script, and their exclude lines). */
+export function dropLegacyFiles(dir: string) {
+  for (const f of LEGACY_FILES) agentRemove(dir, f);
+  removeFromExclude(dir, [...LEGACY_FILES, "# JSM HQ"]);
 }
 
 /** Removes lines HQ added to .git/info/exclude. */
@@ -265,5 +275,5 @@ export function excludeFromGit(dir: string, paths: string[]) {
   const file = ".git/info/exclude";
   const current = agentRead(dir, file) ?? "";
   const missing = paths.filter((p) => !current.split("\n").includes(p));
-  if (missing.length) agentWrite(dir, file, current + (current.endsWith("\n") || !current ? "" : "\n") + "# JSM HQ\n" + missing.join("\n") + "\n");
+  if (missing.length) agentWrite(dir, file, current + (current.endsWith("\n") || !current ? "" : "\n") + "# KH Team\n" + missing.join("\n") + "\n");
 }

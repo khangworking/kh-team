@@ -1,5 +1,5 @@
 // UI font styles for panels, drawers, settings and agent terminals. The office
-// canvas keeps its pixel font. Saved per browser, not in .jsmhq/config.json,
+// canvas keeps its pixel font. Saved per browser, not in the repo's config.json,
 // because it's a personal choice, not a team setting.
 
 export type FontStyle = "pixel" | "clean" | "mono";
@@ -10,8 +10,9 @@ export const FONT_STYLES: { id: FontStyle; label: string; hint: string }[] = [
   { id: "mono", label: "Mono", hint: "JetBrains Mono, like a terminal" },
 ];
 
-const KEY = "jsmhq.font";
-export const FONT_EVENT = "jsmhq:font";
+const KEY = "kh-team.font";
+const LEGACY_KEY = "jsmhq.font"; // before the rename; still read so a saved choice isn't lost
+export const FONT_EVENT = "kh-team:font";
 
 /** Terminals need a monospace font: Pixel keeps VT323, Clean and Mono use JetBrains Mono. */
 export function terminalFont(font: FontStyle) {
@@ -22,7 +23,7 @@ export function terminalFont(font: FontStyle) {
 
 export function savedFont(): FontStyle {
   try {
-    const v = localStorage.getItem(KEY);
+    const v = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY);
     return FONT_STYLES.some((f) => f.id === v) ? (v as FontStyle) : "pixel";
   } catch {
     return "pixel";

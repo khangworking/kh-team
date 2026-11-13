@@ -1,5 +1,6 @@
-// Persistence in the repo: .jsmhq/config.json (team + workflow, safe to commit)
-// and .jsmhq/plan.json (boards + tasks, owned by HQ).
+// Persistence in the repo: .kh-team/config.json (team + workflow, safe to commit)
+// and .kh-team/plan.json (boards + tasks, owned by HQ). A repo that already has .jsmhq/ (from before the rename)
+// keeps using it: HQ never renames a folder inside the user's repo on its own.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,7 +16,9 @@ export interface PlanFile {
   tasks: Task[];
 }
 
-const dir = (root: string) => join(root, ".jsmhq");
+export const CONFIG_DIR = ".kh-team";
+export const LEGACY_CONFIG_DIR = ".jsmhq";
+const dir = (root: string) => (!existsSync(join(root, CONFIG_DIR)) && existsSync(join(root, LEGACY_CONFIG_DIR)) ? join(root, LEGACY_CONFIG_DIR) : join(root, CONFIG_DIR));
 
 function readJson<T>(file: string): T | null {
   if (!existsSync(file)) return null;

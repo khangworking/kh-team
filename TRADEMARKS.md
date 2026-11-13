@@ -15,3 +15,7 @@ The names **JSM HQ**, **JavaScript Mastery** and **JSM**, and their logos, are t
 - Suggest that JavaScript Mastery made, endorses or supports your version.
 
 If you publish a fork, give it a different name and logo. Questions: open an issue on the repository.
+
+## About this fork
+
+**KH Team** is a fork of JSM HQ published under a different name, as the rules above ask. It is not made, endorsed or supported by JavaScript Mastery, and it does not use their logos. The original MIT copyright notice in `LICENSE` is kept.

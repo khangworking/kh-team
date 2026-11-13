@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { agentWrite } from "./lib/agentFs";
 import { PROVIDER_INFO } from "../src/data/providers";
 import type { AgentCli, AgentConfig, HqConfig } from "../src/data/types";
-import { adoptRoleFile, excludeFromGit, HOOK_SCRIPT, type RoleExtras, hookCommand, hookScriptFor, hqUrl, MCP_CONFIG, ROLE_FILE, roleMd, writeClaudeFiles, writeHookScript } from "./agentFiles";
+import { adoptRoleFile, dropLegacyFiles, excludeFromGit, HOOK_SCRIPT, type RoleExtras, hookCommand, hookScriptFor, hqUrl, MCP_CONFIG, ROLE_FILE, roleMd, writeClaudeFiles, writeHookScript } from "./agentFiles";
 import { run } from "./lib/exec";
 import { opencodePluginSource } from "./opencodePlugin";
 
@@ -87,7 +87,7 @@ export function codexConfig(agent: AgentConfig, cfg: HqConfig, token: string, di
   const url = hqUrl(agent, cfg.project.hqPort);
   const script = hookScriptFor(agent, dir);
   const lines = [
-    "# Written by JSM HQ for this agent (git-excluded). Codex loads it once you trust this folder.",
+    "# Written by KH Team for this agent (git-excluded). Codex loads it once you trust this folder.",
     `developer_instructions = ${t(roleMd(agent, cfg, extras))}`,
     // API-key agents use OPENAI_API_KEY from their provider env file instead of a ChatGPT sign-in.
     ...(agent.auth === "apiKey" ? ['forced_login_method = "api"'] : []),
@@ -114,6 +114,7 @@ const codex: CliAdapter = {
     const tracked = await run("git", ["ls-files", "--error-unmatch", CODEX_CONFIG], { cwd: dir });
     if (tracked.ok) throw new Error(`This repo commits ${CODEX_CONFIG}, so HQ can't add its Codex settings without changing a tracked file. Use Claude Code for this agent, or remove that file from the repo.`);
     // The role goes in the config (developer_instructions); the folder's own ROLE.md is included, never overwritten.
+    dropLegacyFiles(dir);
     const ownRole = await adoptRoleFile(dir);
     agentWrite(dir, CODEX_CONFIG, codexConfig(agent, cfg, token, dir, { ...extras, ownRole }), { mode: 0o600 });
     if (hookScriptFor(agent, dir)) writeHookScript(dir);
@@ -175,6 +176,7 @@ const opencode: CliAdapter = {
     // A repo that commits its own OpenCode config can't take HQ's without changing a tracked file.
     const tracked = await run("git", ["ls-files", "--error-unmatch", OPENCODE_CONFIG], { cwd: dir });
     if (tracked.ok) throw new Error(`This repo commits ${OPENCODE_CONFIG}, so HQ can't add its OpenCode settings without changing a tracked file. Use Claude Code or Codex for this agent, or remove that file from the repo.`);
+    dropLegacyFiles(dir);
     const ownRole = await adoptRoleFile(dir);
     agentWrite(dir, ROLE_FILE, roleMd(agent, cfg, { ...extras, ownRole }));
     agentWrite(dir, OPENCODE_CONFIG, JSON.stringify(opencodeConfig(agent, cfg, token, dir, extras.claudeLatest), null, 2) + "\n", { mode: 0o600 });
