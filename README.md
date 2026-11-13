@@ -1,12 +1,13 @@
-# JSM HQ
+# KH Team
 
 **Run a team of AI coding agents on your repo, and watch them work in a pixel-art office.**
 
-[![npm](https://img.shields.io/npm/v/@therealjsmastery/jsm-hq?color=cb3837&label=npm)](https://www.npmjs.com/package/@therealjsmastery/jsm-hq)
-[![license](https://img.shields.io/npm/l/@therealjsmastery/jsm-hq)](LICENSE)
-[![node](https://img.shields.io/node/v/@therealjsmastery/jsm-hq)](https://nodejs.org)
+> **KH Team is a fork of [JSM HQ](https://github.com/jsmastery-pro/jsm-hq)** by JavaScript Mastery (MIT). It keeps the pixel office and adds more models (Claude, Codex, OpenCode with Ollama, DeepSeek, OpenRouter and Gemini), cross-review by an agent on a different model, a daily budget and usage-limit handling. It is not made, endorsed or supported by JavaScript Mastery; see [TRADEMARKS.md](TRADEMARKS.md).
 
-![The JSM HQ office: a lead and two developers at their desks, the task board on the wall, pull requests on the board and the review gate on the belt](docs/images/office.png)
+[![license](https://img.shields.io/github/license/khangworking/kh-team)](LICENSE)
+[![node](https://img.shields.io/badge/node-%E2%89%A520-339933)](https://nodejs.org)
+
+![The KH Team office: a lead and two developers at their desks, the task board on the wall, pull requests on the board and the review gate on the belt](docs/images/office.png)
 
 One **lead** agent plans the work and hands out tasks. Each **worker** gets its own desk, its own copy of your repo and its own Docker Sandbox, then opens a pull request. You see it all happen: the plan on the wall, agents at their desks, PRs moving through review.
 
@@ -22,11 +23,15 @@ Agents run **Claude Code** or **Codex**. Everything runs on your machine.
 
 ## Quick start
 
-From inside a git repo that has a GitHub remote:
+KH Team is not on npm yet, so run it from source (Node 20+ and pnpm):
 
 ```bash
-npx @therealjsmastery/jsm-hq@latest
+git clone https://github.com/khangworking/kh-team && cd kh-team
+pnpm install
+pnpm hq --repo /path/to/your/repo     # a git repo that has a GitHub remote
 ```
+
+Once it is published, from inside your repo: `npx kh-team@latest`.
 
 HQ opens in your browser and walks you through the rest:
 
@@ -41,19 +46,19 @@ HQ opens in your browser and walks you through the rest:
 ```bash
 mkdir hq-test && cd hq-test
 git init -b main && echo "# HQ test" > README.md && git add . && git commit -m init
-npx @therealjsmastery/jsm-hq@latest
+npx kh-team@latest
 ```
 
 ### Options
 
 ```
-jsm-hq --repo <path>   the repo to manage (default: current folder)
+kh-team --repo <path>   the repo to manage (default: current folder)
        --port <n>      HQ port (default: 7420)
        --no-open       don't open the browser
        --version, --help
 ```
 
-Use it often? `npm install -g @therealjsmastery/jsm-hq`, then run `jsm-hq` in any repo.
+Once published: `npm install -g kh-team`, then run `kh-team` in any repo.
 
 ## Requirements
 
@@ -88,7 +93,7 @@ More detail on workspaces, sandboxes, MCP servers, app variables and what HQ sav
 
 | Problem | Fix |
 | --- | --- |
-| A setup check shows "!" but the tool works | You may be on an old HQ. Run `npx @therealjsmastery/jsm-hq@latest` (npx can keep an old version cached). |
+| A setup check shows "!" but the tool works | You may be on an old HQ. Run `npx kh-team@latest` (npx can keep an old version cached). |
 | Start fails: "network policy has not been initialized" | A new Docker Sandboxes install needs a base policy once: `sbx policy init balanced`. |
 | Agents fail to start with a sign-in error | Your Docker sign-in expired. Run `sbx login`, then **Check again** in the setup checklist. |
 | Agents can't push or open PRs | Run `sbx secret set github --command "gh auth token"`, and check the repo has a GitHub `origin`. |
@@ -97,9 +102,9 @@ More detail on workspaces, sandboxes, MCP servers, app variables and what HQ sav
 | An agent's state never changes | The sandbox can't reach HQ. `sbx policy ls` should show `localhost:<port>` and `host.docker.internal:<port>` allowed; HQ adds them on start. |
 | "Port 7420 is in use" | Another HQ is running. Stop it, or use `--port 7421`. |
 | Windows: `listen EACCES` on start | Windows reserved that port. Use `--port 8420`. |
-| `posix_spawnp failed` when opening a terminal | Run `npx clear-npx-cache`, then `npx @therealjsmastery/jsm-hq@latest`. |
+| `posix_spawnp failed` when opening a terminal | Run `npx clear-npx-cache`, then `npx kh-team@latest`. |
 
-**Remove a project:** delete each agent in Settings → Team (this removes its sandbox and, if you choose, its folder), then delete `~/.jsmhq/<project>`.
+**Remove a project:** delete each agent in Settings → Team (this removes its sandbox and, if you choose, its folder), then delete `~/.kh-team/<project>`.
 
 ## Docs
 
@@ -110,4 +115,4 @@ More detail on workspaces, sandboxes, MCP servers, app variables and what HQ sav
 
 ## License
 
-Code: [MIT](LICENSE). The JSM HQ name and logo are not covered by the license; see [TRADEMARKS.md](TRADEMARKS.md).
+Code: [MIT](LICENSE), with the original copyright of JavaScript Mastery kept. The names JSM HQ, JavaScript Mastery and JSM, and their logos, belong to JavaScript Mastery and are not covered by the license; see [TRADEMARKS.md](TRADEMARKS.md).

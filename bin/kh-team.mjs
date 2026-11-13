@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// jsm-hq — run JSM HQ for the git repo you're in.
+// kh-team — run KH Team for the git repo you're in.
 import { readFileSync } from "node:fs";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -10,10 +10,10 @@ if (args.includes("--version") || args.includes("-v")) {
   process.exit(0);
 }
 if (args.includes("--help") || args.includes("-h")) {
-  console.log(`JSM HQ ${pkg.version} — a pixel office for your team of AI coding agents.
+  console.log(`KH Team ${pkg.version} — a pixel office for your team of AI coding agents.
 
 Usage:
-  npx @therealjsmastery/jsm-hq [options]          run inside a git repo
+  npx kh-team [options]          run inside a git repo
 
 Options:
   --repo <path>   the git repo to manage (default: current folder)
@@ -24,19 +24,19 @@ Options:
 
 Needs: Docker Sandboxes (sbx) or Claude Code/Codex, tmux, git, gh.
 HQ checks all of this on start and shows how to fix anything missing.
-Docs: ${pkg.homepage ?? "https://github.com/jsmastery-pro/jsm-hq"}`);
+Docs: ${pkg.homepage ?? "https://github.com/khangworking/kh-team"}`);
   process.exit(0);
 }
 
 const major = Number(process.versions.node.split(".")[0]);
 if (major < 20) {
-  console.error(`JSM HQ needs Node.js 20 or newer (you have ${process.versions.node}).`);
+  console.error(`KH Team needs Node.js 20 or newer (you have ${process.versions.node}).`);
   process.exit(1);
 }
 
 // Check option values here so a typo gets a clear message instead of a silent default.
 const fail = (msg) => {
-  console.error(`jsm-hq: ${msg}\nRun "npx @therealjsmastery/jsm-hq --help" for usage.`);
+  console.error(`kh-team: ${msg}\nRun "npx kh-team --help" for usage.`);
   process.exit(1);
 };
 for (const name of ["--repo", "--port"]) {

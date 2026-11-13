@@ -5,6 +5,7 @@ dist
 
 # HQ state when HQ is run on this repo itself
 .jsmhq/
+.kh-team/
 
 # Built server for the npm package
 dist-server

@@ -294,7 +294,7 @@ export function makeCommands(hub: Hub, sessions: Sessions, planner: Planner, inb
       }
       hub.snap.agents = cfg.team.map((a) => Hub.freshStatus(a.id));
       hub.snap.welcome = false;
-      hub.configChanged(); // saves .jsmhq/config.json for the first time
+      hub.configChanged(); // saves .kh-team/config.json for the first time
       hub.planChanged();
       await sessions.recheckSetup();
       await sbx.refresh();

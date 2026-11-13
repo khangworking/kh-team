@@ -2,7 +2,7 @@
 // into its terminal. If it's busy, the message waits and is handed over by the
 // agent's Stop hook when its turn ends (Claude Code then continues with it).
 //
-// The queue is kept on disk (~/.jsmhq/<project>/inbox.json), so a message waiting for a busy agent survives
+// The queue is kept on disk (~/.kh-team/<project>/inbox.json), so a message waiting for a busy agent survives
 // HQ stopping or crashing. A message leaves the file once the agent has taken it: handed over by the Stop hook,
 // or typed and then answered by the agent's UserPromptSubmit. Typed but not yet answered messages are kept apart
 // ("inflight") and go back in the queue if the session ends first. After a restart a message that no longer

@@ -1,6 +1,6 @@
 // Real sandbox settings through the sbx CLI. HQ reads back what sbx has (rules,
 // keys, proxy) and syncs each agent's allowed/blocked domains. It only ever
-// removes rules it added itself (tracked in ~/.jsmhq/<project>/sbx-owned.json).
+// removes rules it added itself (tracked in ~/.kh-team/<project>/sbx-owned.json).
 
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -474,7 +474,7 @@ export class Sbx {
         file,
         `# App variables for ${this.hub.name(agentId)} (${this.hub.snap.config.project.name}).\n` +
           "# One KEY=value per line. These values ENTER the agent's VM — use test/dev credentials.\n" +
-          "# Restart the agent after editing. JSM HQ never reads or commits this file.\n",
+          "# Restart the agent after editing. KH Team never reads or commits this file.\n",
         { mode: 0o600 },
       );
     }

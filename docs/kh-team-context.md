@@ -1,6 +1,6 @@
-# JSM HQ — Build Context (UI MVP, pixel office)
+# KH Team — Build Context (UI MVP, pixel office)
 
-Context for an AI coding agent. Build the **complete JSM HQ interface with mock data and no real backend.** Every piece of data comes from one mock data source that follows the same interface the real local HQ server will use later.
+Context for an AI coding agent. Build the **complete KH Team interface with mock data and no real backend.** Every piece of data comes from one mock data source that follows the same interface the real local HQ server will use later.
 
 Plan: `context/plans/001-jsm-hq-ui.md`.
 
@@ -8,7 +8,7 @@ Plan: `context/plans/001-jsm-hq-ui.md`.
 
 ## 1. Product
 
-JSM HQ is a local web app: a 2D pixel-art office where a person runs a team of AI coding agents. It is a **general tool**: any repo, any team size, any review/deploy tools.
+KH Team is a local web app: a 2D pixel-art office where a person runs a team of AI coding agents. It is a **general tool**: any repo, any team size, any review/deploy tools.
 
 | Concept          | Meaning                                                                                              |
 | ---------------- | ---------------------------------------------------------------------------------------------------- |

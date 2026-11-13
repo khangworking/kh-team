@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// The spend file goes in a scratch home, not the real ~/.jsmhq.
+// The spend file goes in a scratch home, not the real ~/.kh-team.
 const home = mkdtempSync(join(tmpdir(), "hq-budget-"));
 Object.assign(process.env, { HOME: home, USERPROFILE: home });
 
@@ -123,7 +123,7 @@ const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} â
   assert.equal(second.stopped.length, 0, "already stopped before the restart");
   assert.equal(second.budget.blocks("paid"), true);
 
-  const dir = join(home, ".jsmhq", "newday");
+  const dir = join(home, ".kh-team", "newday");
   mkdirSync(dir, { recursive: true });
   const yesterday = localDay(new Date(Date.now() - 36 * 3600 * 1000));
   writeFileSync(join(dir, "spend.json"), JSON.stringify({ days: { [yesterday]: { paid: 99 } }, sessions: {}, flags: { day: yesterday, warned: true, stopped: true } }));

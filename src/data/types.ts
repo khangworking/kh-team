@@ -96,14 +96,14 @@ export interface WorkflowConfig {
 }
 
 export interface ProjectConfig {
-  /** Fixed once created: names sandboxes, tmux sessions and ~/.jsmhq/<id>. Renaming the project never changes it. */
+  /** Fixed once created: names sandboxes, tmux sessions and ~/.kh-team/<id>. Renaming the project never changes it. */
   id: string; // "askwell"
   name: string; // "Askwell"
-  repo: string; // "jsmastery-pro/askwell"
+  repo: string; // "example/askwell"
   path: string; // "~/developer/askwell"
   hqPort: number; // port sandboxes use to reach HQ via host.docker.internal
   exportPlan?: boolean; // also write the plan to docs/plan.md
-  officeName?: string; // the sign on the office wall; empty = "JSM HQ"
+  officeName?: string; // the sign on the office wall; empty = "KH Team"
 }
 
 export interface HqConfig {

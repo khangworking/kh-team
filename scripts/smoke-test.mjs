@@ -1,4 +1,4 @@
-// Installs a packed jsm-hq tarball into an empty folder like a new user would,
+// Installs a packed kh-team tarball into an empty folder like a new user would,
 // then checks the parts that differ by OS: the terminal library loads and can
 // spawn, and HQ starts on a fresh repo and serves the page and a snapshot.
 //
@@ -13,9 +13,9 @@ import { join, resolve } from "node:path";
 const tarball = resolve(process.argv[2] ?? "");
 const port = Number(process.argv[3] ?? 7431);
 const win = process.platform === "win32";
-const work = mkdtempSync(join(tmpdir(), "jsmhq-smoke-"));
+const work = mkdtempSync(join(tmpdir(), "khteam-smoke-"));
 const app = join(work, "app");
-const repo = join(work, "jsmhq-smoke-repo"); // also HQ's project id → ~/.jsmhq/jsmhq-smoke-repo
+const repo = join(work, "khteam-smoke-repo"); // also HQ's project id → ~/.kh-team/khteam-smoke-repo
 let hq = null;
 
 const sh = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, stdio: "pipe", shell: win, encoding: "utf8" });
@@ -31,7 +31,7 @@ function cleanup() {
     else hq.kill("SIGTERM");
   }
   try {
-    rmSync(join(homedir(), ".jsmhq", "jsmhq-smoke-repo"), { recursive: true, force: true });
+    rmSync(join(homedir(), ".kh-team", "khteam-smoke-repo"), { recursive: true, force: true });
     rmSync(work, { recursive: true, force: true });
   } catch {
     /* Windows may still hold a file; the runner is thrown away anyway */
@@ -54,8 +54,8 @@ try {
 } catch (e) {
   fail(`npm install failed:\n${e.stdout ?? ""}${e.stderr ?? ""}`);
 }
-const pkgRoot = join(app, "node_modules", "@therealjsmastery", "jsm-hq");
-const bin = join(pkgRoot, "bin", "jsm-hq.mjs");
+const pkgRoot = join(app, "node_modules", "kh-team");
+const bin = join(pkgRoot, "bin", "kh-team.mjs");
 step(`version ${sh(process.execPath, [bin, "--version"]).trim()}`);
 
 // 2. The terminal library loads its prebuilt binary and can spawn a process.

@@ -9,9 +9,19 @@ export const slugify = (s: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "") || "project";
 
-/** ~/.jsmhq/<project>/ — HQ's per-project home (agent folders, tokens). */
+/** HQ's home folder under the user's home, and where it was before the rename (the project was called JSM HQ then). */
+export const HOME_DIR = ".kh-team";
+export const LEGACY_HOME_DIR = ".jsmhq";
+
+/**
+ * ~/.kh-team/<project>/ — HQ's per-project home (agent folders, tokens).
+ * An office that already lives in ~/.jsmhq/<project>/ stays there: its agent folders are mounted into
+ * Docker Sandboxes by path (and recorded in their configs), so moving them would break the sandboxes. New offices use ~/.kh-team.
+ */
 export function projectHome(projectSlug: string): string {
-  const dir = join(homedir(), ".jsmhq", projectSlug);
+  const fresh = join(homedir(), HOME_DIR, projectSlug);
+  const legacy = join(homedir(), LEGACY_HOME_DIR, projectSlug);
+  const dir = !existsSync(fresh) && existsSync(legacy) ? legacy : fresh;
   mkdirSync(dir, { recursive: true });
   return dir;
 }

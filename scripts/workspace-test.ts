@@ -20,7 +20,7 @@ const plainConfig = join(tmp, "plain.gitconfig"); // a sandbox, or a macOS/Linux
 writeFileSync(crlfConfig, "[core]\n\tautocrlf = true\n");
 writeFileSync(plainConfig, "");
 
-// HQ's own git calls act as the host. Agent folders land in tmp, not the real ~/.jsmhq.
+// HQ's own git calls act as the host. Agent folders land in tmp, not the real ~/.kh-team.
 Object.assign(process.env, { HOME: tmp, USERPROFILE: tmp, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: crlfConfig });
 
 const git = (config: string, cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: "pipe", env: { ...process.env, GIT_CONFIG_GLOBAL: config } });
