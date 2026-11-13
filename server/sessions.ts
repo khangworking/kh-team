@@ -72,6 +72,8 @@ export class Sessions {
   modelProblem: (agent: AgentConfig) => Promise<string | null> = async () => null;
   /** The newest Anthropic model id of a family the provider's list has (OpenCode doesn't know Claude Code's short names). */
   claudeLatest: (family: string) => string | null = () => null;
+  /** Puts the CLI in a pinned agent's (existing) sandbox on exactly its pinned version. Throws when it can't. */
+  pinCli: (agentId: string) => Promise<void> = async () => {};
   /** Hands an agent's provider key to sbx's proxy (and takes back what it no longer needs) before its sandbox starts. */
   syncProxyKey: (agent: AgentConfig) => Promise<void> = async () => {};
   /** True when the daily budget is used up and this agent uses an API key. */
@@ -176,10 +178,24 @@ export class Sessions {
           }
           // The provider key goes to sbx's proxy, not into the sandbox (and a key the agent no longer needs is taken back).
           await this.syncProxyKey(agent);
+          const sizeArgs = [...(cpus ? ["--cpus", String(cpus)] : []), ...(memoryGb ? ["--memory", `${Math.round(memoryGb * 1024)}m`] : [])];
+          if (agent.cliVersion) {
+            // A pinned agent starts on exactly its version. A new sandbox comes with whatever its image has, so it is created
+            // first (with its size), the pinned CLI installed in it, and only then does the agent start in it.
+            hub.setSession(id, { detail: `Installing ${CLI_LABEL[agent.cli]} ${agent.cliVersion}…` });
+            if (!existing) {
+              const created = await run("sbx", ["create", "--name", name, ...sizeArgs, launch.sbxAgent, dir], { timeoutMs: 300_000 });
+              if (!created.ok) throw new Error(`Could not create ${agent.name}'s sandbox: ${created.stderr.trim().split("\n").pop() ?? "sbx create failed"}`);
+              existing = launch.sbxAgent;
+            }
+            await this.pinCli(id);
+            hub.setSession(id, { detail: "Starting sandbox…" });
+          }
           const isNew = !existing;
-          const size = !isNew ? [] : [...(cpus ? ["--cpus", String(cpus)] : []), ...(memoryGb ? ["--memory", `${Math.round(memoryGb * 1024)}m`] : [])];
+          const size = !isNew ? [] : sizeArgs;
           // The provider key enters the VM as a variable: the sandbox, not the key, is the boundary.
-          const env = [...envFiles.flatMap((f) => ["--env-file", f]), "-e", `BROWSER=${SANDBOX_BROWSER}`];
+          // A pinned Claude Code must not update itself past its pin.
+          const env = [...envFiles.flatMap((f) => ["--env-file", f]), "-e", `BROWSER=${SANDBOX_BROWSER}`, ...(agent.cliVersion && agent.cli === "claude" ? ["-e", "DISABLE_AUTOUPDATER=1"] : [])];
           const args = launch.args.length ? ["--", ...launch.args] : [];
           spec = { file: "sbx", args: ["run", "--name", name, ...size, ...env, launch.sbxAgent, dir, ...args], envFiles: [] };
         }

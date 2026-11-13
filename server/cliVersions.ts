@@ -7,7 +7,7 @@
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cliLine, cliVersionState, NPM_PACKAGE, parseVersion, type CliLine, type CliVersionInfo } from "../src/data/cliVersions";
+import { cliLine, cliNeedsInstall, cliTarget, cliVersionState, NPM_PACKAGE, parseVersion, type CliLine, type CliVersionInfo } from "../src/data/cliVersions";
 import type { AgentCli } from "../src/data/types";
 import type { Hub } from "./hub";
 import { run as runCommand, type RunResult } from "./lib/exec";
@@ -57,11 +57,31 @@ for o in "$root"/*; do
   rm -rf "$o"
 done`;
 
-/** The sbx exec arguments (after the sandbox name) that upgrade a CLI to `latest`. */
-export function upgradeCommand(cli: AgentCli, latest: string): string[] {
-  if (cli === "claude") return ["claude", "update"];
-  if (cli === "opencode") return ["opencode", "upgrade", "--method", "curl"];
-  return ["sh", "-c", CODEX_INSTALL, "sh", latest];
+/**
+ * Installs OpenCode `$1`. `opencode upgrade` puts it in ~/.opencode/bin, which is not on the sandbox's PATH; the image's own
+ * OpenCode (/opt/opencode, linked from /usr/local/bin, owned by root) is, so it would keep winning. ~/.local/bin comes first
+ * in PATH, so the installed one is linked there in one step.
+ */
+export const OPENCODE_INSTALL = `set -e
+opencode upgrade --method curl "$1"
+test -x "$HOME/.opencode/bin/opencode"
+mkdir -p "$HOME/.local/bin"
+ln -sfn "$HOME/.opencode/bin/opencode" "$HOME/.local/bin/opencode.new"
+mv -Tf "$HOME/.local/bin/opencode.new" "$HOME/.local/bin/opencode"`;
+
+/**
+ * The sbx exec arguments (after the sandbox name) that install exactly `version` of a CLI, newer or older than what the sandbox has
+ * (so the same command serves an upgrade and a pin).
+ */
+export function upgradeCommand(cli: AgentCli, version: string): string[] {
+  if (cli === "claude") return ["claude", "install", version];
+  if (cli === "opencode") return ["sh", "-c", OPENCODE_INSTALL, "sh", version];
+  return ["sh", "-c", CODEX_INSTALL, "sh", version];
+}
+
+/** The last meaningful line of what a command said (colours and spinner control codes removed), for an error message. */
+function lastLine(r: RunResult): string | undefined {
+  return `${r.stderr}\n${r.stdout}`.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").split("\n").map((l) => l.trim()).filter(Boolean).pop()?.slice(0, 200);
 }
 
 interface Seen {
@@ -119,6 +139,7 @@ export class CliVersions {
         installed,
         latest: this.latest[cliLine(a.cli, installed)]?.version ?? null,
         checkedAt: same ? s.at : null,
+        pinned: a.cliVersion || null,
         ...(this.upgrading.has(a.id) ? { upgrading: true } : {}),
         ...(this.errors[a.id] ? { error: this.errors[a.id] } : {}),
       };
@@ -201,10 +222,17 @@ export class CliVersions {
     return !!boxes?.some((b) => b.name === name && b.status === "running");
   }
 
+  /** Runs the install of `version` in the sandbox `name` (an exec into a stopped sandbox starts it). Resolves with an error text, or null. */
+  private async install(cli: AgentCli, name: string, version: string): Promise<string | null> {
+    const r = await this.run("sbx", ["exec", name, ...upgradeCommand(cli, version)], { timeoutMs: 330_000 });
+    return r.ok ? null : (lastLine(r) ?? "the install command failed");
+  }
+
   /**
-   * Installs the newest release of the agent's CLI in its sandbox. The agent's running session keeps the old program until
-   * it starts again, so this is safe while it works; Recreate sandbox goes back to the image's version (upgrade again).
-   * Resolves with a line for the user; failures are also kept in the agent's info (`error`) and the activity feed.
+   * Installs the version the agent should have (its pin, else the newest) in its sandbox. The agent's running session keeps the old
+   * program until it starts again, so this is safe while it works; Recreate sandbox goes back to the image's version (a pinned agent is
+   * put back on its pin when it starts). Resolves with a line for the user; failures are also kept in the agent's info (`error`) and
+   * the activity feed.
    */
   async upgrade(agentId: string): Promise<{ ok: boolean; message: string }> {
     const agent = this.hub.snap.config.team.find((a) => a.id === agentId);
@@ -217,27 +245,52 @@ export class CliVersions {
     };
     if (this.upgrading.has(agentId)) return { ok: false, message: "Already upgrading." };
     const before = this.info()[agentId];
-    if (cliVersionState(before) !== "behind" || !before.latest) return fail(`${agent.name}'s ${agent.cli} is not known to be behind, so there is nothing to upgrade.`);
+    const target = cliTarget(before);
+    if (!cliNeedsInstall(cliVersionState(before)) || !target) return fail(`${agent.name}'s ${agent.cli} is not known to differ from the version it should have, so there is nothing to install.`);
     this.upgrading.add(agentId); // before the first await: a second click right behind the first is refused
     try {
-      if (!(await this.running(agentId))) return fail(`Start ${agent.name} first: its sandbox isn't running, and the upgrade is done inside it.`);
+      if (!(await this.running(agentId))) return fail(`Start ${agent.name} first: its sandbox isn't running, and the install is done inside it.`);
       delete this.errors[agentId];
       this.publish();
-      const r = await this.run("sbx", ["exec", sessionName(this.hub.slug, agentId), ...upgradeCommand(agent.cli, before.latest)], { timeoutMs: 330_000 });
+      const error = await this.install(agent.cli, sessionName(this.hub.slug, agentId), target);
       await this.readInstalled([agentId]);
       const after = this.info()[agentId];
-      const upgraded = !!after.installed && !!before.installed && after.installed !== before.installed && cliVersionState(after) !== "behind";
-      if (!r.ok && !upgraded) {
-        const detail = `${r.stderr}\n${r.stdout}`.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").split("\n").map((l) => l.trim()).filter(Boolean).pop();
-        return fail(`upgrading ${agent.cli} failed${detail ? `: ${detail.slice(0, 200)}` : ""}.`);
-      }
-      if (!upgraded) return fail(`${agent.cli} is still ${after.installed ?? "of unknown version"} after the upgrade (the newest is ${before.latest}).`);
-      const message = `${agent.cli} upgraded from ${before.installed} to ${after.installed} in ${agent.name}'s sandbox. It takes effect the next time ${agent.name} starts.`;
+      const done = cliVersionState(after) === "current";
+      if (error && !done) return fail(`installing ${agent.cli} ${target} failed: ${error}.`);
+      if (!done) return fail(`${agent.cli} is still ${after.installed ?? "of unknown version"} after the install (it should be ${target}).`);
+      const message = `${agent.cli} ${before.installed} → ${after.installed} in ${agent.name}'s sandbox${before.pinned ? " (pinned)" : ""}. It takes effect the next time ${agent.name} starts.`;
       this.hub.activity("session", agentId, `${agent.name}: ${message}`);
       return { ok: true, message };
     } finally {
       this.upgrading.delete(agentId);
       this.publish();
     }
+  }
+
+  /**
+   * Before a pinned agent starts: makes the CLI in its sandbox (which must exist) exactly the pinned version, installing it if
+   * needed, so a new or recreated sandbox, whose image has some other version, never runs an unpinned one. Does nothing for an agent
+   * without a pin. Throws, with something the user can act on, when it can't: an agent on the wrong version must not start quietly.
+   */
+  async enforcePin(agentId: string): Promise<void> {
+    const agent = this.hub.snap.config.team.find((a) => a.id === agentId);
+    const pin = agent?.cliVersion;
+    if (!agent || !pin) return;
+    const name = sessionName(this.hub.slug, agentId);
+    const read = async () => {
+      const r = await this.run("sbx", ["exec", name, agent.cli, "--version"], { timeoutMs: 60_000 });
+      return r.ok ? parseVersion(r.stdout) : null;
+    };
+    let installed = await read();
+    if (installed !== pin) {
+      const error = await this.install(agent.cli, name, pin);
+      installed = await read();
+      if (installed !== pin)
+        throw new Error(`Could not install ${agent.cli} ${pin}, the version ${agent.name} is pinned to${error ? `: ${error}` : ` (the sandbox has ${installed ?? "an unreadable version"})`}. Fix it, or change or clear the pin in Settings → Team.`);
+      this.hub.activity("session", agentId, `${agent.name}: installed ${agent.cli} ${pin}, the version it is pinned to.`);
+    }
+    this.seen[agentId] = { cli: agent.cli, version: pin, at: new Date(this.now()).toISOString() };
+    this.save();
+    this.publish();
   }
 }

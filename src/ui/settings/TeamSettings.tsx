@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { nextAgentName } from "../../data/names";
 import { modelListed, normalizeAuth, PROVIDER_INFO, PROVIDERS, providersFor, SUBSCRIPTION_PROVIDER, type ProviderId } from "../../data/providers";
-import { cliVersionState } from "../../data/cliVersions";
+import { cliNeedsInstall, cliTarget, cliVersionState } from "../../data/cliVersions";
 import { CLI_LABEL, type AgentAuth, type AgentCli, type AgentConfig, type AgentMode } from "../../data/types";
 import { officeActions, useOffice } from "../../store/office";
 import { agentPalette } from "../../theme/tokens";
@@ -107,20 +107,25 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
   const cliVersion = useOffice((s) => s.snap?.cliVersions?.[agent.id]);
   const versionState = cliVersionState(cliVersion);
   const sandboxRunning = useOffice((s) => s.snap?.agents.find((a) => a.agentId === agent.id)?.session.state === "running");
+  const pinned = agent.cliVersion || null;
+  const target = cliTarget(cliVersion);
+  const needsInstall = cliNeedsInstall(versionState);
   const versionText =
-    versionState === "behind"
-      ? `⚠ ${cliVersion!.installed} → ${cliVersion!.latest} available`
-      : versionState === "current"
-        ? `${cliVersion!.installed} · up to date`
-        : cliVersion?.installed
-          ? `${cliVersion.installed} · newest not checked`
-          : "version not read yet";
+    versionState === "off-pin"
+      ? `⚠ pinned to ${pinned}, but the sandbox has ${cliVersion!.installed}`
+      : versionState === "behind"
+        ? `⚠ ${cliVersion!.installed} → ${cliVersion!.latest} available`
+        : versionState === "current"
+          ? `${cliVersion!.installed} · ${pinned ? "pinned" : "up to date"}`
+          : cliVersion?.installed
+            ? `${cliVersion.installed} · newest not checked`
+            : "version not read yet";
   const model = agent.model.trim();
   // A list the provider itself gave: a model it doesn't have would stop the agent from starting.
   const unknownModel = agent.auth === "apiKey" && !!model && !/^(default|opus|sonnet|haiku)$/i.test(model) && !!liveModels && !modelListed(liveModels, model);
   return (
     <div className="border-[3px] border-ink bg-white">
-      <div className="grid grid-cols-[40px_1fr_1fr_165px_170px_100px_auto] items-end gap-2.5 p-2.5">
+      <div className="grid grid-cols-[40px_1fr_1fr_190px_170px_100px_auto] items-end gap-2.5 p-2.5">
         <Portrait color={agent.color} lead={agent.isLead} />
         <Field label="Name">
           <CommitInput className="field" value={agent.name} onCommit={(v) => v.trim() && set({ name: v.trim() })} />
@@ -141,22 +146,27 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
                   ({cliVersion.installed})
                 </span>
               )}
-              {versionState === "behind" && (
+              {pinned && (
+                <span className="ml-1 font-normal" role="img" aria-label={`Pinned to ${pinned}`} title={`Pinned to ${pinned}: HQ installs exactly this version before ${agent.name} starts and ignores newer ones.`}>
+                  📌
+                </span>
+              )}
+              {needsInstall && (
                 <>
-                  <span className="ml-1 text-red" role="img" aria-label="CLI update available" title={cliVersion?.error ? `${versionText}. Last upgrade: ${cliVersion.error}` : versionText}>
+                  <span className="ml-1 text-red" role="img" aria-label={pinned ? "Not on the pinned version" : "CLI update available"} title={cliVersion?.error ? `${versionText}. Last attempt: ${cliVersion.error}` : versionText}>
                     ⚠
                   </span>
                   <button
                     type="button"
                     className="ml-1 inline-flex h-[18px] w-[18px] items-center justify-center border-2 border-ink bg-white align-middle hover:bg-cream-2 disabled:opacity-50"
                     disabled={!!cliVersion?.upgrading || !sandboxRunning}
-                    aria-label={`Upgrade ${CLI_LABEL[agent.cli]} to ${cliVersion?.latest}`}
+                    aria-label={`${pinned ? "Install" : "Upgrade"} ${CLI_LABEL[agent.cli]} ${target}`}
                     title={
                       cliVersion?.upgrading
-                        ? `Upgrading ${CLI_LABEL[agent.cli]}…`
+                        ? `Installing ${CLI_LABEL[agent.cli]} ${target}…`
                         : sandboxRunning
-                          ? `Upgrade ${CLI_LABEL[agent.cli]} ${cliVersion?.installed} → ${cliVersion?.latest} in this agent's sandbox. It takes effect the next time ${agent.name} starts.`
-                          : `Start ${agent.name} first: the upgrade is done inside its running sandbox.`
+                          ? `${pinned ? "Install the pinned" : "Upgrade to the newest"} ${CLI_LABEL[agent.cli]} ${target} (now ${cliVersion?.installed}) in this agent's sandbox. It takes effect the next time ${agent.name} starts.`
+                          : `${agent.name} isn't running. ${pinned ? "It is put on its pinned version when it starts." : "Start it first: the upgrade is done inside its running sandbox."}`
                     }
                     onClick={(e) => {
                       e.preventDefault(); // inside a label: don't pass the click to the select
@@ -211,11 +221,27 @@ function AgentRow({ agent, expanded, onToggle, onRemove }: { agent: AgentConfig;
           </Field>
           <Field
             label={`${CLI_LABEL[agent.cli]} version`}
-            hint="Read from this agent's sandbox while it runs; the newest is npm's latest release. The CLI is part of the sandbox and stays at the version it had when the sandbox was created, so HQ can't update it yet: Recreate sandbox starts a new one (it may reuse sbx's cached image, and drops what the old sandbox held, such as its last conversation)."
+            hint="Read from this agent's sandbox while it runs; the newest is the latest release. The CLI is part of the sandbox and stays at the version it had when the sandbox was created; the arrow button beside the Agent label installs the newest (or the pinned) one, effective when the agent next starts. Recreate sandbox goes back to the version in sbx's cached image, and drops what the old sandbox held, such as its last conversation."
           >
-            <div className="field flex h-9 items-center bg-cream-2">
+            <div className="field flex min-h-9 flex-wrap items-center bg-cream-2 py-1 leading-tight">
               {versionText}
               {cliVersion?.checkedAt && versionState !== "unknown" ? <span className="ml-2 text-[12px] text-muted">· read {new Date(cliVersion.checkedAt).toLocaleString()}</span> : null}
+            </div>
+          </Field>
+          <Field
+            label={`Pin ${CLI_LABEL[agent.cli]} version`}
+            hint={`Optional, like 0.167.0. Pinned: HQ installs exactly this version in the sandbox before ${agent.name} starts (also in a new or recreated sandbox, which comes with whatever its image has), and the newest is ignored. Starting fails if it can't be installed. ${agent.cli === "claude" ? "Claude Code's own updater is turned off while pinned. " : ""}Empty: follows the newest.`}
+          >
+            <div className="flex gap-1.5">
+              <CommitInput className="field min-w-0 flex-1" value={agent.cliVersion ?? ""} placeholder="not pinned" onCommit={(v) => set({ cliVersion: v.trim() || null })} />
+              <button type="button" className="btn px-2 text-[13px]" disabled={!cliVersion?.installed || pinned === cliVersion.installed} onClick={() => set({ cliVersion: cliVersion!.installed })} title="Pin the version the sandbox has now">
+                Pin current
+              </button>
+              {pinned && (
+                <button type="button" className="btn px-2 text-[13px]" onClick={() => set({ cliVersion: null })}>
+                  Unpin
+                </button>
+              )}
             </div>
           </Field>
           <Field
@@ -293,7 +319,7 @@ function AddAgent() {
     <section className="border-[3px] border-dashed border-ink p-3">
       <SectionTitle>Add an agent</SectionTitle>
       <form
-        className="grid grid-cols-[1fr_1fr_165px_170px_100px_auto] items-end gap-2.5"
+        className="grid grid-cols-[1fr_1fr_190px_170px_100px_auto] items-end gap-2.5"
         onSubmit={(e) => {
           e.preventDefault();
           add();

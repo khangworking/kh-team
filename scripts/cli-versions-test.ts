@@ -10,8 +10,8 @@ import { join } from "node:path";
 const home = mkdtempSync(join(tmpdir(), "hq-cliver-"));
 Object.assign(process.env, { HOME: home, USERPROFILE: home });
 
-const { cliLine, compareVersions, cliVersionState, parseVersion, NPM_PACKAGE } = await import("../src/data/cliVersions");
-const { CliVersions, upgradeCommand, CODEX_INSTALL } = await import("../server/cliVersions");
+const { cliLine, cliNeedsInstall, cliTarget, compareVersions, cliVersionState, isVersion, parseVersion, NPM_PACKAGE } = await import("../src/data/cliVersions");
+const { CliVersions, upgradeCommand, CODEX_INSTALL, OPENCODE_INSTALL } = await import("../server/cliVersions");
 
 // ---------------------------------------------------------------- reading and comparing
 assert.equal(parseVersion("2.1.322 (Claude Code)"), "2.1.322");
@@ -35,7 +35,7 @@ assert.equal(cliVersionState({ installed: "2.0.29", latest: "1.19.5" }), "curren
 assert.deepEqual(Object.keys(NPM_PACKAGE).sort(), ["claude", "codex", "opencode"]);
 
 // ---------------------------------------------------------------- the server side
-type A = { id: string; name: string; cli: "claude" | "codex" | "opencode" };
+type A = { id: string; name: string; cli: "claude" | "codex" | "opencode"; cliVersion?: string | null };
 const team: A[] = [
   { id: "jim", name: "Jim", cli: "claude" },
   { id: "dwight", name: "Dwight", cli: "codex" },
@@ -191,8 +191,10 @@ assert.equal(cliLine("claude", "2.1.322"), "claude");
 
 // ---------------------------------------------------------------- upgrading
 {
-  assert.deepEqual(upgradeCommand("claude", "2.1.322"), ["claude", "update"]);
-  assert.deepEqual(upgradeCommand("opencode", "2.2.7"), ["opencode", "upgrade", "--method", "curl"]);
+  assert.deepEqual(upgradeCommand("claude", "2.1.322"), ["claude", "install", "2.1.322"], "an exact version, so the same command pins and upgrades");
+  assert.deepEqual(upgradeCommand("opencode", "2.2.7"), ["sh", "-c", OPENCODE_INSTALL, "sh", "2.2.7"]);
+  assert.match(OPENCODE_INSTALL, /opencode upgrade --method curl "\$1"/);
+  assert.match(OPENCODE_INSTALL, /mv -Tf .*opencode\.new.* .*\.local\/bin\/opencode"/, "linked first on PATH, in one step: the image's own OpenCode would otherwise win");
   assert.deepEqual(upgradeCommand("codex", "0.167.2"), ["sh", "-c", CODEX_INSTALL, "sh", "0.167.2"]);
   assert.match(CODEX_INSTALL, /rust-v\$v\/codex-package-\$t\.tar\.gz/, "the whole package, not the lone binary");
   assert.match(CODEX_INSTALL, /\.local\/share\/codex/, "the agent user's own directory, no root needed");
@@ -209,11 +211,12 @@ assert.equal(cliLine("claude", "2.1.322"), "claude");
   const seenUpgrading: boolean[] = [];
   let cvRef: { info: () => Record<string, { upgrading?: boolean }> } | null = null;
   const upgradeRun = async (cmd: string, args: string[]) => {
-    if (args[0] === "exec" && (args[2] === "claude" && args[3] === "update" || args[2] === "sh")) {
+    if (args[0] === "exec" && (args[2] === "claude" && args[3] === "install" || args[2] === "sh")) {
       calls.push(args);
       seenUpgrading.push(!!cvRef?.info()[args[1].replace("hq-v-", "")].upgrading);
       if (behave === "fail") return { ok: false, code: 1, stdout: "", stderr: "curl: (22) The requested URL returned error: 404\n" };
-      if (behave === "ok") outputs[`${args[1]} ${args[1].endsWith("jim") ? "claude" : "codex"}`] = args[1].endsWith("jim") ? "2.1.322 (Claude Code)\n" : "codex-cli 0.167.2\n";
+      const version = args[2] === "claude" ? args[4] : args[args.length - 1]; // what was asked for
+      if (behave === "ok") outputs[`${args[1]} ${args[1].endsWith("jim") ? "claude" : "codex"}`] = args[1].endsWith("jim") ? `${version} (Claude Code)\n` : `codex-cli ${version}\n`;
       return { ok: true, code: 0, stdout: "done\n", stderr: "" };
     }
     return fakeRun(cmd, args);
@@ -245,14 +248,14 @@ assert.equal(cliLine("claude", "2.1.322"), "claude");
   assert.equal((await cv.upgrade("jim")).ok, false, "not twice at once");
   const res = await done;
   assert.equal(res.ok, true);
-  assert.match(res.message, /upgraded from 2\.1\.311 to 2\.1\.322/);
+  assert.match(res.message, /claude 2\.1\.311 → 2\.1\.322 in Jim's sandbox/);
   assert.match(res.message, /next time Jim starts/);
   assert.deepEqual(seenUpgrading, [true]);
   assert.equal(info().jim.installed, "2.1.322");
   assert.equal(info().jim.upgrading, undefined);
   assert.equal(info().jim.error, undefined);
-  assert.deepEqual(calls.find((c) => c[0] === "exec" && c[2] === "claude" && c[3] === "update"), ["exec", "hq-v-jim", "claude", "update"]);
-  assert.ok(h.activity.some((t) => /upgraded from 2\.1\.311/.test(t)));
+  assert.deepEqual(calls.find((c) => c[0] === "exec" && c[2] === "claude" && c[3] === "install"), ["exec", "hq-v-jim", "claude", "install", "2.1.322"]);
+  assert.ok(h.activity.some((t) => /2\.1\.311 → 2\.1\.322/.test(t)));
   assert.equal((await cv.upgrade("jim")).ok, false, "up to date now: nothing to do");
 
   // Codex: the install script runs with the newest version as its argument.
@@ -267,7 +270,7 @@ assert.equal(cliLine("claude", "2.1.322"), "claude");
   behave = "fail";
   const bad = await cv.upgrade("jim");
   assert.equal(bad.ok, false);
-  assert.match(bad.message, /upgrading claude failed: curl: \(22\) The requested URL returned error: 404/);
+  assert.match(bad.message, /installing claude 2\.1\.322 failed: curl: \(22\) The requested URL returned error: 404/);
   assert.equal(info().jim.installed, "2.1.311");
   assert.match(info().jim.error ?? "", /404/);
 
@@ -282,6 +285,98 @@ assert.equal(cliLine("claude", "2.1.322"), "claude");
   behave = "ok";
   assert.equal((await cv.upgrade("jim")).ok, true);
   assert.equal(info().jim.error, undefined);
+}
+
+
+// ---------------------------------------------------------------- pinning
+assert.equal(isVersion("0.167.0"), true);
+for (const bad of ["", "0.167", "v0.167.0", "0.167.0-beta", "latest", null, 5]) assert.equal(isVersion(bad), false, `${String(bad)} is not a pin`);
+{
+  assert.equal(cliVersionState({ installed: "0.167.0", latest: "0.167.2", pinned: "0.167.0" }), "current", "on its pin, the newer release doesn't matter");
+  assert.equal(cliVersionState({ installed: "0.167.2", latest: "0.167.2", pinned: "0.167.0" }), "off-pin", "newer than the pin is wrong too");
+  assert.equal(cliVersionState({ installed: "0.166.0", latest: null, pinned: "0.167.0" }), "off-pin", "no need to know the newest");
+  assert.equal(cliVersionState({ installed: null, latest: "1.0.0", pinned: "0.167.0" }), "unknown");
+  assert.equal(cliVersionState({ installed: "0.167.0", latest: "0.167.2", pinned: null }), "behind", "not pinned: as before");
+  assert.equal(cliTarget({ latest: "0.167.2", pinned: "0.167.0" }), "0.167.0");
+  assert.equal(cliTarget({ latest: "0.167.2", pinned: null }), "0.167.2");
+  assert.equal(cliTarget({ latest: null, pinned: null }), null);
+  assert.equal(cliNeedsInstall("behind"), true);
+  assert.equal(cliNeedsInstall("off-pin"), true);
+  assert.equal(cliNeedsInstall("current"), false);
+  assert.equal(cliNeedsInstall("unknown"), false);
+}
+
+{
+  status = { "hq-v-jim": "running", "hq-v-dwight": "running", "hq-v-pam": "exited" };
+  const sbxVersion: Record<string, string> = { "hq-v-jim": "2.1.322 (Claude Code)\n", "hq-v-dwight": "codex-cli 0.167.2\n" };
+  const ran: string[][] = [];
+  let installFails = false;
+  const pinRun = async (cmd: string, args: string[]) => {
+    if (args[0] === "exec" && args[3] === "--version") return { ok: true, code: 0, stdout: sbxVersion[args[1]] ?? "", stderr: "" };
+    if (args[0] === "exec" && (args[2] === "claude" || args[2] === "sh")) {
+      ran.push(args);
+      if (installFails) return { ok: false, code: 1, stdout: "", stderr: "curl: (22) The requested URL returned error: 404\n" };
+      const version = args[2] === "claude" ? args[4] : args[args.length - 1];
+      sbxVersion[args[1]] = args[2] === "claude" ? `${version} (Claude Code)\n` : `codex-cli ${version}\n`;
+      return { ok: true, code: 0, stdout: "", stderr: "" };
+    }
+    return fakeRun(cmd, args);
+  };
+  outputs["hq-v-jim claude"] = sbxVersion["hq-v-jim"];
+  outputs["hq-v-dwight codex"] = sbxVersion["hq-v-dwight"];
+  const h = hubOf("v");
+  const cv = new CliVersions(h.hub as never, { run: pinRun as never, fetch: fakeFetch as never, now: () => clock, file: join(home, "pin-state.json") });
+  const info = () => cv.info();
+
+  // Without a pin nothing is enforced.
+  await cv.enforcePin("jim");
+  assert.equal(ran.length, 0);
+
+  // The pin is in the info, and an agent on another version is "off-pin" (here: newer, which an upgrade would never fix).
+  team[0].cliVersion = "2.1.311";
+  await cv.check({ force: true });
+  assert.equal(info().jim.pinned, "2.1.311");
+  assert.equal(cliVersionState(info().jim), "off-pin");
+
+  // The button installs exactly the pinned version, going back.
+  const back = await cv.upgrade("jim");
+  assert.equal(back.ok, true, back.message);
+  assert.deepEqual(ran.at(-1), ["exec", "hq-v-jim", "claude", "install", "2.1.311"]);
+  assert.equal(info().jim.installed, "2.1.311");
+  assert.match(back.message, /\(pinned\)/);
+  assert.equal(cliVersionState(info().jim), "current");
+
+  // At start: already on the pin → nothing runs. Another version → installed first. A new sandbox's image version is just "another".
+  ran.length = 0;
+  await cv.enforcePin("jim");
+  assert.equal(ran.length, 0, "already pinned");
+  sbxVersion["hq-v-jim"] = "2.1.322 (Claude Code)\n"; // a recreated sandbox
+  await cv.enforcePin("jim");
+  assert.deepEqual(ran.at(-1), ["exec", "hq-v-jim", "claude", "install", "2.1.311"]);
+  assert.equal(info().jim.installed, "2.1.311", "what HQ knows follows");
+  assert.ok(h.activity.some((t) => /installed claude 2\.1\.311, the version it is pinned to/.test(t)));
+
+  // Codex goes through the same, with its version as the script's argument.
+  team[1].cliVersion = "0.167.0";
+  sbxVersion["hq-v-dwight"] = "codex-cli 0.167.2\n";
+  await cv.enforcePin("dwight");
+  assert.deepEqual(ran.at(-1)?.slice(-2), ["sh", "0.167.0"]);
+  assert.equal(sbxVersion["hq-v-dwight"], "codex-cli 0.167.0\n");
+
+  // It can't be installed: the start must fail, with the pin named and what to do.
+  team[0].cliVersion = "9.9.9";
+  installFails = true;
+  await assert.rejects(cv.enforcePin("jim"), /Could not install claude 9\.9\.9, the version Jim is pinned to: curl: \(22\) The requested URL returned error: 404\. Fix it, or change or clear the pin in Settings → Team\./);
+  installFails = false;
+
+  // A command that says "ok" but leaves another version is a failure too.
+  const lying = new CliVersions(h.hub as never, { run: (async (cmd: string, args: string[]) => (args[3] === "--version" ? { ok: true, code: 0, stdout: "2.1.322 (Claude Code)\n", stderr: "" } : args[0] === "exec" ? { ok: true, code: 0, stdout: "", stderr: "" } : fakeRun(cmd, args))) as never, fetch: fakeFetch as never, file: join(home, "lie-state.json") });
+  team[0].cliVersion = "2.1.311";
+  await assert.rejects(lying.enforcePin("jim"), /the sandbox has 2\.1\.322/);
+
+  // An unreadable version after the install is reported as such.
+  team[0].cliVersion = null;
+  team[1].cliVersion = null;
 }
 
 console.log("cli-versions: ok");

@@ -13,6 +13,8 @@ export interface CliVersionInfo {
   latest: string | null;
   /** When the installed version was read (ISO), so a stopped agent shows what its sandbox had last time. */
   checkedAt: string | null;
+  /** The version the agent is pinned to (null = follows the newest). */
+  pinned?: string | null;
   /** An upgrade is running in the agent's sandbox. */
   upgrading?: boolean;
   /** Why the last upgrade failed (cleared by the next one). */
@@ -42,10 +44,24 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export type CliVersionState = "unknown" | "current" | "behind";
+/** "0.167.0": what a pin may be. */
+export const isVersion = (v: unknown): v is string => typeof v === "string" && /^\d+\.\d+\.\d+$/.test(v);
 
-/** "behind" only when the sandbox's CLI is older than the newest published; a newer one (a beta channel) is current. */
-export function cliVersionState(info: Pick<CliVersionInfo, "installed" | "latest"> | undefined): CliVersionState {
-  if (!info?.installed || !info.latest) return "unknown";
+export type CliVersionState = "unknown" | "current" | "behind" | "off-pin";
+
+/**
+ * Pinned: "current" only on exactly the pinned version, otherwise "off-pin" (older or newer: both are wrong).
+ * Not pinned: "behind" only when the sandbox's CLI is older than the newest published; a newer one (a beta channel) is current.
+ */
+export function cliVersionState(info: Pick<CliVersionInfo, "installed" | "latest" | "pinned"> | undefined): CliVersionState {
+  if (!info?.installed) return "unknown";
+  if (info.pinned) return info.installed === info.pinned ? "current" : "off-pin";
+  if (!info.latest) return "unknown";
   return compareVersions(info.installed, info.latest) < 0 ? "behind" : "current";
 }
+
+/** The version HQ would install: the pin, else the newest published. */
+export const cliTarget = (info: Pick<CliVersionInfo, "latest" | "pinned"> | undefined): string | null => info?.pinned || info?.latest || null;
+
+/** An install would change something. */
+export const cliNeedsInstall = (state: CliVersionState): boolean => state === "behind" || state === "off-pin";

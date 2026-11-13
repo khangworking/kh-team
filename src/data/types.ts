@@ -56,6 +56,8 @@ export interface AgentConfig {
   resume?: boolean;
   /** Reviews pull requests (and takes no tasks) when the review tool is "agent": a model other than the author's reviews each PR. */
   reviewer?: boolean;
+  /** Pinned version of this agent's coding CLI ("0.167.0"). HQ installs exactly it before the agent starts and leaves newer ones alone. null/absent = follow the newest. */
+  cliVersion?: string | null;
 }
 
 /** An MCP server registered with Docker Sandboxes (`sbx mcp ls`). */
@@ -448,7 +450,7 @@ export interface WelcomeInput {
 }
 
 export type AgentPatch = Partial<
-  Pick<AgentConfig, "name" | "role" | "cli" | "auth" | "provider" | "model" | "mode" | "color" | "skills" | "roleMd" | "workspacePath" | "resume" | "reviewer">
+  Pick<AgentConfig, "name" | "role" | "cli" | "auth" | "provider" | "model" | "mode" | "color" | "skills" | "roleMd" | "workspacePath" | "resume" | "reviewer" | "cliVersion">
 >;
 
 export interface WorkflowPatch {
